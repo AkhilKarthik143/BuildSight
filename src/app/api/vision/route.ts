@@ -13,7 +13,7 @@ const SYSTEM_PROMPT =
 type VisionRequest = { image?: string; question?: string };
 
 export async function POST(request: Request) {
-  const apiKey = process.env.OPENROUTER_API_KEY;
+  const apiKey = process.env.OPENROUTER_API_KEY?.trim(); // pasted keys often carry a stray space
   if (!apiKey) {
     return Response.json(
       { error: "OPENROUTER_API_KEY is not set. Add it to .env.local and restart the dev server." },
