@@ -1,9 +1,8 @@
 // Reads one manual page image and returns the build steps on it.
 
+import { askClaude, ClaudeError } from "@/lib/claude";
 import { firstJsonObject } from "@/lib/json";
 
-const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
-const DEFAULT_MODEL = "anthropic/claude-sonnet-5.5";
 const MAX_IMAGE_CHARS = 6_000_000;
 
 export type ExtractedPart = {
@@ -79,9 +78,6 @@ function parse(text: string): ExtractedStep[] | null {
 }
 
 export async function POST(request: Request) {
-  const apiKey = process.env.OPENROUTER_API_KEY?.trim();
-  if (!apiKey) return Response.json({ error: "OPENROUTER_API_KEY is not set." }, { status: 500 });
-
   let page: unknown;
   try {
     page = (await request.json())?.page;
@@ -94,28 +90,23 @@ export async function POST(request: Request) {
 
   const started = Date.now();
   let lastRaw = "";
-  // One retry: replies occasionally come back as prose instead of JSON.
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const res = await fetch(OPENROUTER_URL, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", "X-Title": "BuildSight" },
-      body: JSON.stringify({
-        model: process.env.OPENROUTER_MODEL || DEFAULT_MODEL,
-        max_tokens: 2500,
-        temperature: 0,
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: [{ type: "image_url", image_url: { url: page } }, { type: "text", text: "Extract the steps on this page. JSON only." }] },
+  try {
+    // One retry: replies occasionally come back as prose instead of JSON.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      lastRaw = await askClaude({
+        system: SYSTEM_PROMPT,
+        parts: [
+          { type: "image", dataUrl: page },
+          { type: "text", text: "Extract the steps on this page. JSON only." },
         ],
-      }),
-    });
-    if (!res.ok) {
-      return Response.json({ error: `OpenRouter error ${res.status}`, detail: (await res.text()).slice(0, 500) }, { status: 502 });
+      });
+      const steps = parse(lastRaw);
+      if (steps) return Response.json({ steps, latencyMs: Date.now() - started });
+      console.warn("[extract] unparseable reply:", lastRaw.slice(0, 400));
     }
-    lastRaw = (await res.json())?.choices?.[0]?.message?.content ?? "";
-    const steps = parse(lastRaw);
-    if (steps) return Response.json({ steps, latencyMs: Date.now() - started });
-    console.warn("[extract] unparseable reply:", lastRaw.slice(0, 400));
+  } catch (e) {
+    const err = e instanceof ClaudeError ? e : new ClaudeError("Couldn't read that page.");
+    return Response.json({ error: err.message }, { status: err.status });
   }
   return Response.json({ error: "Couldn't read steps from that page.", raw: lastRaw.slice(0, 300) }, { status: 502 });
 }
