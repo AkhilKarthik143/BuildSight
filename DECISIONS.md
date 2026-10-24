@@ -48,6 +48,8 @@ Format: **Decision** — why. *(date, PT)*
 - **Speech to text: Azure AI Speech in the browser** (`microsoft-cognitiveservices-speech-sdk` 1.53). `GET /api/speech-token` trades the key for a 10-minute token (reused for 9 min), so the key never reaches the browser. The connection is opened when the build screen loads, so the first press starts fast. *(Sat Oct 24, ~1 PM)*
 - **Push-to-talk first: hold the mic button or hold M** (Space is already Check build). Words show while you speak; releasing sends the sentence. Hands-free mode comes after the full loop works. *(Sat Oct 24, ~1 PM)*
 - **Voice questions: `POST /api/assist`** takes the question, the latest camera frame, recent turns, and the current manual step; streams plain text back. Claude Sonnet 5.5 with thinking off (`between_tools`) and low effort, for speed: **~1.4 s to the first word**, ~2.2 s total. The prompt keeps answers spoken-style: 1–3 sentences, one step at a time, safety first, asks for a closer look instead of guessing. Refusal fallback on. *(Sat Oct 24, ~1:30 PM)*
+- **Voice out: Cartesia `sonic-3.6`, voice "George" (steady British male), through `POST /api/tts`,** which streams raw audio (32-bit float, 24 kHz) straight from Cartesia's bytes endpoint. ~0.35 s to first audio from Cartesia, ~0.6 s through our server. No WebSocket needed: the bytes endpoint already streams. Voice is overridable with `CARTESIA_VOICE_ID`. *(Sat Oct 24, ~2 PM)*
+- **Replies are spoken sentence by sentence while Claude is still writing:** each finished sentence goes to Cartesia right away and plays in order (very short ones are merged with the next). Talking interrupts the voice. If Cartesia fails, that sentence uses the browser's voice. *(Sat Oct 24, ~2 PM)*
 
 ## Hologram / interactive UI
 
@@ -78,7 +80,7 @@ Format: **Decision** — why. *(date, PT)*
   - The page image shows (with a scan sweep) while Claude reads it.
   - Measured on the live site, fresh device: step 1 ready in ~11–22 s (was 25–130 s); Next ~0.3–1.3 s. Remaining time is mostly lego.com's slow, variable PDF delivery (1 MB in 1–5 s).
 - **Build screen starts at the first page with steps** (or where you left off), shows the step's manual picture as a glowing "target" panel, the next part as a hologram, and a **Check build** button (also Space/Enter). A verified step auto-advances. *(Sat Oct 24, ~3 AM)*
-- **Voice out uses the browser's built-in speech for now** (prefers a British male voice), with a mute toggle. Cartesia replaces it later. *(Sat Oct 24, ~3 AM)*
+- ~~Voice out uses the browser's built-in speech for now~~ **Replaced by Cartesia** (Sat Oct 24, ~2 PM); the browser voice is only a fallback. Mute toggle kept. *(Sat Oct 24, ~3 AM)*
 
 ## Prizes
 

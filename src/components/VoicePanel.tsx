@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AssistRequest } from "@/app/api/assist/route";
 import { Listener } from "@/lib/listen";
-import { speak } from "@/lib/speech";
+import { speaker } from "@/lib/speech";
 
 export type VoiceStatus = "idle" | "listening" | "thinking" | "speaking";
 type Line = { who: "you" | "assistant"; text: string };
@@ -64,6 +64,15 @@ export default function VoicePanel({ getFrame, context, muted }: Props) {
     };
   }, []);
 
+  // Show "Speaking" whenever the voice is playing (replies and step announcements alike).
+  useEffect(
+    () =>
+      speaker().subscribe((on) =>
+        setStatus((s) => (on ? (s === "listening" ? s : "speaking") : s === "speaking" ? "idle" : s)),
+      ),
+    [],
+  );
+
   useEffect(() => {
     scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: "smooth" });
   }, [lines, interim]);
@@ -71,6 +80,10 @@ export default function VoicePanel({ getFrame, context, muted }: Props) {
   const press = useCallback(() => {
     if (held.current || !listener.current) return;
     held.current = true;
+    // Talking interrupts: stop the voice and any answer still coming in.
+    speaker().unlock();
+    speaker().stop();
+    asking.current?.abort();
     setError(null);
     setInterim("");
     setStatus("listening");
@@ -99,6 +112,8 @@ export default function VoicePanel({ getFrame, context, muted }: Props) {
     const history = linesRef.current.map((l) => ({ role: l.who === "you" ? ("user" as const) : ("assistant" as const), text: l.text }));
     setLines((ls) => [...ls, { who: "you", text: question }, { who: "assistant", text: "" }]);
     setStatus("thinking");
+    const voice = muted ? null : speaker().stream();
+    const finish = () => setStatus((s) => (s === "thinking" || s === "speaking" ? "idle" : s));
 
     const setReply = (text: string) =>
       setLines((ls) => {
@@ -120,16 +135,18 @@ export default function VoicePanel({ getFrame, context, muted }: Props) {
       for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
-        reply += decoder.decode(value, { stream: true });
+        const chunk = decoder.decode(value, { stream: true });
+        reply += chunk;
         setReply(reply);
+        voice?.push(chunk); // each finished sentence starts speaking right away
       }
       reply = reply.trim();
       if (!reply) throw new Error("Got an empty answer. Try again.");
-      // Temporary: browser voice until Cartesia is wired in.
-      if (!muted) speak(reply);
-      setStatus("idle");
+      if (voice) voice.end().then(() => !ctrl.signal.aborted && finish());
+      else finish();
     } catch (e) {
       if (ctrl.signal.aborted) return;
+      voice?.end();
       setLines((ls) => (ls[ls.length - 1]?.who === "assistant" && !ls[ls.length - 1].text ? ls.slice(0, -1) : ls));
       setError(e instanceof TypeError ? "Network problem. Check the connection and try again." : e instanceof Error ? e.message : "Something went wrong.");
       setStatus("idle");
