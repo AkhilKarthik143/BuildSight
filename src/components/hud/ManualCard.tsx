@@ -35,7 +35,7 @@ export default function ManualCard({ source, title, subtitle, coverUrl, meta, pr
         onClick={onAction}
         disabled={busy}
         aria-label={`${action} ${title}`}
-        className={`relative aspect-[4/3] w-full overflow-hidden ${coverUrl ? "bg-white" : "bg-gradient-to-b from-sky-400/10 to-transparent"}`}
+        className={`relative aspect-[4/3] w-full overflow-hidden ${coverUrl ? "bg-white/[0.03]" : "bg-gradient-to-b from-sky-400/10 to-transparent"}`}
       >
         {coverUrl ? (
           <ProductImage src={coverUrl} sizes="(max-width: 640px) 100vw, 380px" className="group-hover:scale-[1.04]" />

@@ -17,8 +17,8 @@ export default function CatalogCard({ item, index, busy, onOpen }: { item: Catal
       transition={{ delay: Math.min(index, 12) * 0.025, type: "spring", stiffness: 260, damping: 26 }}
       className="group flex flex-col overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] text-left shadow-[0_10px_30px_-12px_rgba(0,0,0,0.7)] transition-colors hover:border-sky-300/30 hover:shadow-[0_20px_50px_-20px_rgba(92,200,255,0.45)] disabled:opacity-70"
     >
-      <div className="relative aspect-square w-full overflow-hidden bg-white">
-        <ProductImage src={item.image} sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 280px" className="group-hover:scale-[1.05]" />
+      <div className="relative aspect-square w-full overflow-hidden bg-white/[0.03]">
+        <ProductImage src={item.image} priority={index < 8} sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 280px" className="group-hover:scale-[1.05]" />
         <span className="absolute left-2.5 top-2.5 rounded-md bg-black/70 px-2 py-0.5 text-[10px] font-semibold text-white backdrop-blur">
           {item.category}
         </span>

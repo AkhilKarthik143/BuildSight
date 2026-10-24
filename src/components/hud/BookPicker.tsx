@@ -48,7 +48,7 @@ export default function BookPicker({ item, onPick, onClose }: { item: CatalogIte
               onClick={() => onPick(m)}
               className="group overflow-hidden rounded-xl border border-white/10 bg-white/[0.03] text-left transition hover:border-sky-300/40"
             >
-              <div className="relative aspect-square bg-white">
+              <div className="relative aspect-square bg-white/[0.03]">
                 <ProductImage src={m.coverUrl ?? item.image} sizes="160px" padded={false} className="group-hover:scale-105" />
               </div>
               <div className="p-2">
