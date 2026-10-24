@@ -10,7 +10,7 @@ import { Listener } from "@/lib/listen";
 import { speaker } from "@/lib/speech";
 
 export type VoiceStatus = "idle" | "listening" | "thinking" | "speaking";
-type Line = { who: "you" | "assistant"; text: string };
+type Line = { who: "you" | "assistant"; text: string; frame?: string };
 
 const STATUS_LABEL: Record<VoiceStatus, string> = {
   idle: "Hold to talk",
@@ -156,7 +156,8 @@ export default function VoicePanel({ getFrame, context, muted, compact }: Props)
     asking.current = ctrl;
     const { getFrame, context, muted } = props.current;
     const history = linesRef.current.map((l) => ({ role: l.who === "you" ? ("user" as const) : ("assistant" as const), text: l.text }));
-    setLines((ls) => [...ls, { who: "you", text: question }, { who: "assistant", text: "" }]);
+    const frame = getFrame?.() ?? undefined; // what the camera sees the moment you stop talking
+    setLines((ls) => [...ls, { who: "you", text: question, frame }, { who: "assistant", text: "" }]);
     setStatus("thinking");
     const voice = muted ? null : speaker().stream();
     const finish = () => setStatus((s) => (s === "thinking" || s === "speaking" ? "idle" : s));
@@ -169,7 +170,7 @@ export default function VoicePanel({ getFrame, context, muted, compact }: Props)
       });
 
     try {
-      const body: AssistRequest = { question, history, frame: getFrame?.() ?? undefined, ...context };
+      const body: AssistRequest = { question, history, frame, ...context };
       const res = await fetch("/api/assist", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: ctrl.signal });
       if (!res.ok || !res.body) {
         const data = await res.json().catch(() => ({}));
@@ -288,6 +289,10 @@ export default function VoicePanel({ getFrame, context, muted, compact }: Props)
         )}
         {lines.map((l, i) => (
           <p key={i} className={l.who === "you" ? "text-white/90" : "text-sky-200"}>
+            {l.frame && (
+              // eslint-disable-next-line @next/next/no-img-element -- camera frame is a data URL
+              <img src={l.frame} alt="What BuildSight saw" className="float-right ml-2 h-9 w-12 rounded object-cover ring-1 ring-white/20" />
+            )}
             <span className="mr-1.5 text-[10px] font-semibold uppercase text-white/40">{l.who === "you" ? "You" : "BuildSight"}</span>
             {l.text || <span className="animate-pulse text-white/40">…</span>}
           </p>
