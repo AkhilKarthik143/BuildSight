@@ -36,6 +36,9 @@ Format: **Decision** — why. *(date, PT)*
 - **Step checks compare the camera frame to the manual's own picture for that step** (plus the previous step's), instead of asking the model to work out the build from scratch. Output: `step_complete`, `confidence`, `issues[]`. Below 0.7 confidence it asks for a closer look. *(Sat Oct 24, ~1 AM)*
 - **Manuals are turned into step records once** (parts, action, expected picture, things to watch for), and a person approves them. *(Sat Oct 24, ~1 AM)*
 - **Simple commands (next, back, repeat) skip the model** for sub-second replies. *(Sat Oct 24, ~1 AM)*
+- **Step check endpoint: `POST /api/check`** takes `frame`, `expected`, optional `previous`, `instruction`, `watchFor`; returns `step_complete`, `confidence`, `issues[]`, and a short `say` line. Temperature 0. *(Sat Oct 24, ~1:45 AM)*
+- **Test manual: LEGO Creator 31163** (official PDF from lego.com, book 1, 100 pages, 1–2 steps per page with parts boxes). *(Sat Oct 24, ~1:40 AM)*
+- **Stand-in test result: 10/10** (5 step pairs × finished / not yet), ~3 s per check, using manual pictures as fake camera frames. Without a test-mode note, Claude refused to call a drawing "finished" and asked for a real photo, which is the behavior we want live. **Real-photo test still needed.** *(Sat Oct 24, ~1:50 AM)*
 - **Checks fire when the scene goes still** (hands out of frame ~1.5 s), detected in the browser, rather than sending every frame. *(Sat Oct 24, ~1 AM)*
 
 ## Hologram / interactive UI
