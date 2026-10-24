@@ -39,6 +39,9 @@ export default function VoicePanel({ getFrame, context, muted, compact }: Props)
   const [interim, setInterim] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [handsFree, setHandsFree] = useState(false);
+  // The panel is a small pill; the latest answer shows below it while active and for a few seconds after.
+  const [faded, setFaded] = useState(true);
+  const [pinned, setPinned] = useState(false); // tap the status line to keep the full transcript open
   const handsFreeRef = useRef(false);
   handsFreeRef.current = handsFree;
 
@@ -119,6 +122,13 @@ export default function VoicePanel({ getFrame, context, muted, compact }: Props)
     });
   }, []);
 
+  // Shrink back to the pill a few seconds after the answer finishes.
+  useEffect(() => {
+    if (status !== "idle" || faded) return;
+    const t = setTimeout(() => setFaded(true), 6000);
+    return () => clearTimeout(t);
+  }, [status, faded]);
+
   useEffect(() => {
     scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: "smooth" });
   }, [lines, interim]);
@@ -126,6 +136,7 @@ export default function VoicePanel({ getFrame, context, muted, compact }: Props)
   const press = useCallback(() => {
     if (held.current || !listener.current) return;
     held.current = true;
+    setFaded(false);
     // Talking interrupts: stop the voice and any answer still coming in.
     speaker().unlock();
     speaker().stop();
@@ -158,6 +169,7 @@ export default function VoicePanel({ getFrame, context, muted, compact }: Props)
     const history = linesRef.current.map((l) => ({ role: l.who === "you" ? ("user" as const) : ("assistant" as const), text: l.text }));
     const frame = getFrame?.() ?? undefined; // what the camera sees the moment you stop talking
     setLines((ls) => [...ls, { who: "you", text: question, frame }, { who: "assistant", text: "" }]);
+    setFaded(false);
     setStatus("thinking");
     const voice = muted ? null : speaker().stream();
     const finish = () => setStatus((s) => (s === "thinking" || s === "speaking" ? "idle" : s));
@@ -266,55 +278,68 @@ export default function VoicePanel({ getFrame, context, muted, compact }: Props)
     );
   }
 
+  const statusLine =
+    status === "listening"
+      ? interim || "Listening…"
+      : status === "thinking"
+        ? "Thinking…"
+        : status === "speaking"
+          ? "Speaking · tap mic to stop"
+          : handsFree
+            ? "Hands-free · just talk"
+            : "Hold to ask";
+  const shown = pinned ? lines : lines.slice(-2);
+  const open = pinned || error !== null || (!faded && lines.length > 0);
+
   return (
-    <section className="hud-panel flex w-full flex-col overflow-hidden rounded-2xl">
-      <div className="flex items-center gap-2 px-3 pt-2.5">
-        <span className={`h-2 w-2 rounded-full ${STATUS_DOT[status]}`} />
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-white/80">{STATUS_LABEL[status]}</span>
+    <section className="hud-panel w-full overflow-hidden rounded-2xl">
+      <div className="flex h-11 items-center gap-2 pl-1 pr-1.5">
+        <button
+          {...micHandlers}
+          aria-label={micLabel}
+          className={`relative grid h-9 w-9 shrink-0 select-none place-items-center rounded-full text-base transition active:scale-95 ${
+            status === "listening" ? "bg-rose-400" : "bg-white/10 hover:bg-white/20"
+          }`}
+        >
+          🎙
+          <span className={`absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-ink ${STATUS_DOT[status]}`} />
+        </button>
+        <button
+          onClick={() => setPinned((p) => !p)}
+          className={`min-w-0 flex-1 truncate text-left text-[13px] ${status === "listening" && interim ? "italic text-white/70" : "text-white/85"}`}
+          title={pinned ? "Hide transcript" : "Show transcript"}
+        >
+          {statusLine}
+          {status === "idle" && !handsFree && <span className="ml-1.5 hidden text-[10px] text-white/40 sm:inline">or hold M</span>}
+        </button>
         <button
           onClick={toggleHandsFree}
           aria-pressed={handsFree}
-          className={`ml-auto rounded-full border px-2.5 py-0.5 text-[10px] font-semibold transition ${
-            handsFree ? "border-emerald-300/50 bg-emerald-300/15 text-emerald-100" : "border-white/15 text-white/60 hover:text-white"
+          title="Hands-free (H)"
+          className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold transition ${
+            handsFree ? "border-emerald-300/50 bg-emerald-300/15 text-emerald-100" : "border-white/15 text-white/55 hover:text-white"
           }`}
         >
-          Hands-free {handsFree ? "on" : "off"}
-          <span className="ml-1 hidden text-white/40 sm:inline">H</span>
+          <span className="sm:hidden">{handsFree ? "Auto on" : "Auto"}</span>
+          <span className="hidden sm:inline">Hands-free {handsFree ? "on" : "off"}</span>
         </button>
       </div>
 
-      <div ref={scroller} className="max-h-28 min-h-10 space-y-1.5 overflow-y-auto px-3 py-2 text-[13px] leading-snug sm:max-h-48">
-        {lines.length === 0 && !interim && (
-          <p className="text-white/40">{handsFree ? "Just talk. Ask anything about this step." : "Hold to talk (or hold M). Ask anything about this step."}</p>
-        )}
-        {lines.map((l, i) => (
-          <p key={i} className={l.who === "you" ? "text-white/90" : "text-sky-200"}>
-            {l.frame && (
-              // eslint-disable-next-line @next/next/no-img-element -- camera frame is a data URL
-              <img src={l.frame} alt="What BuildSight saw" className="float-right ml-2 h-9 w-12 rounded object-cover ring-1 ring-white/20" />
-            )}
-            <span className="mr-1.5 text-[10px] font-semibold uppercase text-white/40">{l.who === "you" ? "You" : "BuildSight"}</span>
-            {l.text || <span className="animate-pulse text-white/40">…</span>}
-          </p>
-        ))}
-        {interim && (
-          <p className="text-white/50 italic">
-            <span className="mr-1.5 text-[10px] font-semibold uppercase not-italic text-white/40">You</span>
-            {interim}
-          </p>
-        )}
-      </div>
-
-      {error && <p className="mx-3 mb-2 rounded-lg border border-rose-400/30 bg-rose-400/10 px-2.5 py-1.5 text-xs text-rose-100">{error}</p>}
-
-      <button
-        {...micHandlers}
-        className={`m-2 mt-0 select-none rounded-xl py-3 text-sm font-semibold transition active:scale-[0.98] ${
-          status === "listening" ? "bg-rose-400 text-ink" : "border border-white/15 bg-white/[0.08] text-white hover:bg-white/15"
-        }`}
-      >
-        {micLabel}
-      </button>
+      {open && (
+        <div ref={scroller} className={`space-y-1.5 overflow-y-auto border-t border-white/10 px-3 py-2 text-[13px] leading-snug ${pinned ? "max-h-48 sm:max-h-72" : "max-h-28 sm:max-h-40"}`}>
+          {shown.map((l, i) => (
+            <p key={lines.length - shown.length + i} className={l.who === "you" ? "text-white/90" : "text-sky-200"}>
+              {l.frame && (
+                // eslint-disable-next-line @next/next/no-img-element -- camera frame is a data URL
+                <img src={l.frame} alt="What BuildSight saw" className="float-right ml-2 h-9 w-12 rounded object-cover ring-1 ring-white/20" />
+              )}
+              <span className="mr-1.5 text-[10px] font-semibold uppercase text-white/40">{l.who === "you" ? "You" : "BuildSight"}</span>
+              {l.text || <span className="animate-pulse text-white/40">…</span>}
+            </p>
+          ))}
+          {error && <p className="rounded-lg border border-rose-400/30 bg-rose-400/10 px-2.5 py-1.5 text-xs text-rose-100">{error}</p>}
+        </div>
+      )}
     </section>
   );
 }
