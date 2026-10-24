@@ -17,6 +17,7 @@ export type CatalogItem = {
   pieces?: number;
   year?: number;
   itemNo?: string; // IKEA
+  featured?: boolean; // pinned to the front of its tab
 };
 
 // Display order for category chips (unknown categories go last).
@@ -27,10 +28,12 @@ const ORDER = [
 const rank = (c: string) => (ORDER.includes(c) ? ORDER.indexOf(c) : ORDER.length);
 
 // Interleaves categories so "All" opens on a mix (a Creator set, a City set, a Technic set…).
-function mixed(items: CatalogItem[]): CatalogItem[] {
+function mixed(all: CatalogItem[]): CatalogItem[] {
+  const featured = all.filter((i) => i.featured);
+  const items = all.filter((i) => !i.featured);
   const groups = categoriesOf(items).map((c) => items.filter((i) => i.category === c));
-  const out: CatalogItem[] = [];
-  for (let row = 0; out.length < items.length; row++) for (const g of groups) if (g[row]) out.push(g[row]);
+  const out: CatalogItem[] = [...featured];
+  for (let row = 0; out.length < all.length; row++) for (const g of groups) if (g[row]) out.push(g[row]);
   return out;
 }
 

@@ -1,6 +1,38 @@
 {
- "builtAt": "2026-10-24T17:50:34.810Z",
+ "builtAt": "2026-10-24T20:30:50.001Z",
  "lego": [
+  {
+   "id": "lego-31136",
+   "source": "lego",
+   "set": "31136",
+   "name": "Exotic Parrot",
+   "category": "Creator",
+   "age": "7+",
+   "pieces": 253,
+   "year": 2023,
+   "image": "https://www.lego.com/cdn/product-assets/product.img.pri/31136_Prod.png?format=webply&fit=bounds&quality=75&width=480&height=480",
+   "manuals": [
+    {
+     "label": "Book 1 of 3",
+     "size": "20.49MB",
+     "pdfPath": "/manual-pdf/lego/6455750.pdf",
+     "coverUrl": "https://www.lego.com/cdn/product-assets/product.bi.core.img/6455750.png?format=webply&fit=crop&quality=75&width=400&height=400"
+    },
+    {
+     "label": "Book 2 of 3",
+     "size": "13.84MB",
+     "pdfPath": "/manual-pdf/lego/6455751.pdf",
+     "coverUrl": "https://www.lego.com/cdn/product-assets/product.bi.core.img/6455751.png?format=webply&fit=crop&quality=75&width=400&height=400"
+    },
+    {
+     "label": "Book 3 of 3",
+     "size": "8.93MB",
+     "pdfPath": "/manual-pdf/lego/6455752.pdf",
+     "coverUrl": "https://www.lego.com/cdn/product-assets/product.bi.core.img/6455752.png?format=webply&fit=crop&quality=75&width=400&height=400"
+    }
+   ],
+   "featured": true
+  },
   {
    "id": "lego-10342",
    "source": "lego",

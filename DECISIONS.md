@@ -16,6 +16,7 @@ Format: **Decision** — why. *(date, PT)*
 
 ## Demo
 
+- **Demo build: LEGO 31136 Exotic Parrot** (Creator 3-in-1, 253 pieces, 7+, 3 books; the team bought it). Featured first on the LEGO tab via `FEATURED` in `scripts/build-catalog.mjs`. *(Sat Oct 24, ~1:30 PM)*
 - **Main prop: a small LEGO set (100–250 pieces), bright colors, mostly larger bricks. No Technic** (grey pins and beams look alike on camera). *(Sat Oct 24, ~1 AM)*
 - **Second prop: a small IKEA piece** (4–8 steps) to prove it isn't LEGO-specific. *(Sat Oct 24, ~1:30 AM)*
 - **Demo beats:** guide the next step → catch a deliberate mistake (side-by-side with the manual picture) → switch to the IKEA build by voice. *(Sat Oct 24, ~1 AM)*

@@ -19,11 +19,12 @@ export default function CatalogCard({ item, index, busy, onOpen }: { item: Catal
     >
       <div className="relative aspect-square w-full overflow-hidden bg-white/[0.03]">
         <ProductImage src={item.image} priority={index < 8} sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 280px" className="group-hover:scale-[1.05]" />
-        <span className="absolute left-2.5 top-2.5 rounded-md bg-black/70 px-2 py-0.5 text-[10px] font-semibold text-white backdrop-blur">
-          {item.category}
+        <span className="absolute left-2.5 top-2.5 flex gap-1">
+          {item.featured && <span className="rounded-md bg-sky-400 px-2 py-0.5 text-[10px] font-semibold text-ink">Featured</span>}
+          <span className="rounded-md bg-black/70 px-2 py-0.5 text-[10px] font-semibold text-white backdrop-blur">{item.category}</span>
         </span>
         {item.manuals.length > 1 && (
-          <span className="absolute right-2.5 top-2.5 rounded-md bg-white/90 px-2 py-0.5 text-[10px] font-semibold text-slate-800 ring-1 ring-black/5">
+          <span className="absolute bottom-2.5 right-2.5 rounded-md bg-white/90 px-2 py-0.5 text-[10px] font-semibold text-slate-800 ring-1 ring-black/5">
             {item.manuals.length} books
           </span>
         )}

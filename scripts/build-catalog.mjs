@@ -5,11 +5,13 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 
 const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36";
 const PER_THEME = 8;
+// Always included and shown first (the set we build in the demo).
+const FEATURED = ["31136"];
 const decode = (s) => s.replace(/&amp;/g, "&").replace(/&#x27;|&#39;/g, "'").replace(/&quot;/g, '"').replace(/®|™/g, "").trim();
 
 // Candidate set numbers by theme. Ones without instructions on lego.com get dropped.
 const LEGO_CANDIDATES = {
-  Creator: [31163, 31153, 31159, 31152, 31155, 31156, 31157, 31158, 31160, 31161, 31162, 31164, 31165, 31166, 31139, 31141, 31142, 31144, 31145, 31146, 31147, 31148, 31149, 31150, 31151],
+  Creator: [31136, 31163, 31153, 31159, 31152, 31155, 31156, 31157, 31158, 31160, 31161, 31162, 31164, 31165, 31166, 31139, 31141, 31142, 31144, 31145, 31146, 31147, 31148, 31149, 31150, 31151],
   City: [60398, 60402, 60403, 60404, 60405, 60406, 60407, 60408, 60409, 60410, 60411, 60412, 60413, 60414, 60415, 60416, 60417, 60418, 60419, 60420, 60421, 60422, 60423, 60424],
   Technic: [42151, 42152, 42153, 42154, 42155, 42156, 42157, 42158, 42159, 42160, 42161, 42162, 42163, 42164, 42165, 42166, 42167, 42168, 42169, 42170, 42171, 42172, 42173],
   Icons: [10311, 10313, 10314, 10328, 10329, 10342, 10343, 10280, 10281, 10289, 10309, 10316, 10317, 10318, 10320, 10321, 10323, 10325, 10326, 10327, 10330, 10331, 10332, 10333],
@@ -179,9 +181,12 @@ const themes = [...new Set(legoAll.map((s) => s.category))];
 const lego = themes.flatMap((theme) =>
   legoAll.filter((s) => s.category === theme).sort((a, b) => (b.year ?? 0) - (a.year ?? 0)).slice(0, PER_THEME),
 );
+// Featured sets go first, whatever their theme's cap.
+const featured = FEATURED.map((set) => cache.lego[set]).filter(Boolean).map((s) => ({ ...s, featured: true }));
+const legoOut = [...featured, ...lego.filter((s) => !FEATURED.includes(s.set))];
 const seen = new Set();
 const ikea = ikeaAll.filter((p) => !seen.has(p.id) && seen.add(p.id));
 
 mkdirSync("src/data", { recursive: true });
-writeFileSync("src/data/catalog.json", JSON.stringify({ builtAt: new Date().toISOString(), lego, ikea }, null, 1));
-console.log(`LEGO: ${legoAll.length} found, ${lego.length} kept across ${new Set(lego.map((s) => s.category)).size} themes. IKEA: ${ikea.length}.`);
+writeFileSync("src/data/catalog.json", JSON.stringify({ builtAt: new Date().toISOString(), lego: legoOut, ikea }, null, 1));
+console.log(`LEGO: ${legoAll.length} found, ${legoOut.length} kept (${featured.length} featured) across ${new Set(lego.map((s) => s.category)).size} themes. IKEA: ${ikea.length}.`);
