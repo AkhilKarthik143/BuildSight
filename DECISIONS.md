@@ -89,6 +89,7 @@ Format: **Decision** — why. *(date, PT)*
   - The page image shows (with a scan sweep) while Claude reads it.
   - Measured on the live site, fresh device: step 1 ready in ~11–22 s (was 25–130 s); Next ~0.3–1.3 s. Remaining time is mostly lego.com's slow, variable PDF delivery (1 MB in 1–5 s).
 - **Build screen starts at the first page with steps** (or where you left off), shows the step's manual picture as a glowing "target" panel, the next part as a hologram, and a **Check build** button (also Space/Enter). A verified step auto-advances. *(Sat Oct 24, ~3 AM)*
+- **Tapping the manual picture opens a full-screen zoom viewer** (`ZoomViewer`): pinch, mouse wheel / trackpad, or double-tap (2.5×, again to reset) to zoom 1–6×; drag to pan, kept from leaving the screen; +, −, Fit and Close buttons (Escape closes). Switch between **This step** (the crop) and **Whole page**, since crops sometimes cut off context. Part highlight boxes zoom with the picture (This step only). The glow toggle moved into the viewer's header; real colors stay the default. One CSS transform plus pointer events with `touch-action: none`, so iPhone Safari doesn't zoom the page. *(Sat Oct 24, ~4 PM)*
 - ~~Voice out uses the browser's built-in speech for now~~ **Replaced by Cartesia** (Sat Oct 24, ~2 PM); the browser voice is only a fallback. Mute toggle kept. *(Sat Oct 24, ~3 AM)*
 
 ## Prizes

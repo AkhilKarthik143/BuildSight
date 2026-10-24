@@ -9,9 +9,11 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import type { CheckResult } from "@/app/api/check/route";
 import type { ExtractedStep } from "@/app/api/extract/route";
-import type { Box, LocateResult } from "@/app/api/locate/route";
+import type { LocateResult } from "@/app/api/locate/route";
 import CameraFeed, { type CameraHandle } from "@/components/CameraFeed";
+import HighlightBox from "@/components/HighlightBox";
 import VoicePanel from "@/components/VoicePanel";
+import ZoomViewer from "@/components/ZoomViewer";
 import { getManual, getPageSteps, saveManual, savePageSteps, type Manual } from "@/lib/manuals";
 import { openManualPdf, renderPage } from "@/lib/pdf";
 import { loadPrebuilt, type Prebuilt } from "@/lib/prebuilt";
@@ -154,29 +156,6 @@ function pageReader(manualId: string, source: PageSource) {
   };
 }
 
-// Glowing outline over the manual picture: cyan around the piece in the parts box, amber where it goes.
-function HighlightBox({ box, kind }: { box: Box; kind: "callout" | "placed" }) {
-  const pad = 0.015;
-  return (
-    <motion.span
-      aria-hidden
-      initial={{ opacity: 0, scale: 1.3 }}
-      animate={{ opacity: 1, scale: 1 }}
-      className={`pointer-events-none absolute rounded-md border-2 ${
-        kind === "callout" ? "border-sky-300 shadow-[0_0_14px_2px_rgba(92,200,255,0.8)]" : "border-dashed border-amber-300 shadow-[0_0_14px_2px_rgba(252,211,77,0.6)]"
-      }`}
-      style={{
-        left: `${Math.max(0, box.x - pad) * 100}%`,
-        top: `${Math.max(0, box.y - pad) * 100}%`,
-        width: `${Math.min(1, box.w + 2 * pad) * 100}%`,
-        height: `${Math.min(1, box.h + 2 * pad) * 100}%`,
-      }}
-    >
-      {kind === "callout" && <span className="absolute inset-0 animate-pulse rounded-md bg-sky-300/15" />}
-    </motion.span>
-  );
-}
-
 export default function BuildView() {
   const { id } = useParams<{ id: string }>();
   const camera = useRef<CameraHandle>(null);
@@ -194,6 +173,7 @@ export default function BuildView() {
   const [check, setCheck] = useState<Check | null>(null);
   const [muted, setMuted] = useState(false);
   const [showManual, setShowManual] = useState(false); // true = blue "hologram" tint; default is the real colors
+  const [zoomOpen, setZoomOpen] = useState(false); // full-screen zoom viewer for the manual picture
   // Phones get a swipeable step card: swipe down to see your build, up for full details.
   const isPhone = useIsPhone();
   const [sheetOpen, setSheetOpen] = useState(true);
@@ -375,6 +355,7 @@ export default function BuildView() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (zoomOpen) return; // the zoom viewer handles its own keys
       if (e.key === "ArrowRight") go(1);
       if (e.key === "ArrowLeft") go(-1);
       if (e.key === " " || e.key === "Enter") {
@@ -384,7 +365,7 @@ export default function BuildView() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [go, runCheck]);
+  }, [go, runCheck, zoomOpen]);
 
   const verdict = useMemo(() => {
     if (check?.state !== "result") return null;
@@ -465,11 +446,16 @@ export default function BuildView() {
             exit={{ opacity: 0, x: 24 }}
             className={`absolute right-3 top-20 z-10 transition-[width] duration-300 sm:right-6 sm:top-24 sm:w-72 ${compact ? "w-24" : selectedPart != null ? "w-44" : "w-36"}`}
           >
-            <button onClick={() => setShowManual((s) => !s)} className="hud-panel holo-glow block w-full overflow-hidden rounded-xl text-left">
+            <button
+              onClick={() => setZoomOpen(true)}
+              aria-label={`Zoom into the manual picture for step ${step?.number}`}
+              aria-haspopup="dialog"
+              className="hud-panel holo-glow block w-full overflow-hidden rounded-xl text-left"
+            >
               {!compact && (
                 <div className="flex items-center justify-between px-3 pt-2">
                   <span className="text-[10px] font-semibold text-white/70 sm:text-[11px]">Step {step?.number} · manual</span>
-                  <span className="text-[10px] text-white/40">{showManual ? "Tap for color" : "Tap for glow"}</span>
+                  <span className="text-[10px] text-white/40">Tap to zoom</span>
                 </div>
               )}
               <div className="relative m-2 overflow-hidden rounded-lg bg-ink/60">
@@ -479,6 +465,23 @@ export default function BuildView() {
               </div>
             </button>
           </motion.aside>
+        )}
+      </AnimatePresence>
+
+      {/* full-screen zoom viewer for the manual picture */}
+      <AnimatePresence>
+        {zoomOpen && target && phase.kind === "ready" && (
+          <ZoomViewer
+            key="zoom"
+            target={target}
+            pageImage={pageImage}
+            stepNumber={step?.number}
+            glow={showManual}
+            onGlowChange={setShowManual}
+            callout={highlight?.result?.callout}
+            placed={highlight?.result?.placed}
+            onClose={() => setZoomOpen(false)}
+          />
         )}
       </AnimatePresence>
 
