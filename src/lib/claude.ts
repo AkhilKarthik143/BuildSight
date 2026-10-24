@@ -98,3 +98,58 @@ export async function askClaude(ask: Ask): Promise<string> {
   if (process.env.OPENROUTER_API_KEY?.trim()) return viaOpenRouter(ask);
   throw new ClaudeError("No Claude key set. Add ANTHROPIC_API_KEY (or OPENROUTER_API_KEY) to .env.local and to Vercel.", 500);
 }
+
+// ---- Streaming, for the voice assistant ----
+
+export type Turn = { role: "user" | "assistant"; text: string; image?: string };
+
+/**
+ * Streams Claude's reply as text chunks. Tuned for speed: no extended thinking, low effort, short replies.
+ * Without an Anthropic key it falls back to one non-streamed OpenRouter call.
+ */
+export async function* streamClaude(system: string, turns: Turn[]): AsyncGenerator<string> {
+  if (!process.env.ANTHROPIC_API_KEY?.trim()) {
+    const last = turns[turns.length - 1];
+    const parts: Part[] = [{ type: "text", text: last.text }];
+    if (last.image) parts.unshift({ type: "image", dataUrl: last.image });
+    yield await askClaude({ system, parts });
+    return;
+  }
+
+  client ??= new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY!.trim() });
+  const messages: Anthropic.Beta.BetaMessageParam[] = turns.map((t) => {
+    if (!t.image) return { role: t.role, content: t.text };
+    const { mediaType, data } = splitDataUrl(t.image);
+    return {
+      role: t.role,
+      content: [
+        { type: "image", source: { type: "base64", media_type: mediaType, data } },
+        { type: "text", text: t.text },
+      ],
+    };
+  });
+
+  try {
+    const stream = client.beta.messages.stream({
+      model: ANTHROPIC_MODEL,
+      max_tokens: 2000,
+      // Sonnet 5.5's no-thinking mode: fastest first word. Other models just use low effort.
+      ...(ANTHROPIC_MODEL === "claude-sonnet-5-5" ? { thinking: { type: "between_tools" as const } } : {}),
+      output_config: { effort: "low" },
+      betas: ["server-side-fallback-2026-07-01"],
+      fallbacks: "default",
+      system,
+      messages,
+    });
+    for await (const event of stream) {
+      if (event.type === "content_block_delta" && event.delta.type === "text_delta") yield event.delta.text;
+    }
+    const final = await stream.finalMessage();
+    if (final.stop_reason === "refusal") yield " Sorry, I can't help with that one.";
+  } catch (e) {
+    if (e instanceof Anthropic.AuthenticationError) throw new ClaudeError("Anthropic rejected the API key.", 500);
+    if (e instanceof Anthropic.RateLimitError) throw new ClaudeError("Rate limited by Anthropic. Try again in a moment.", 429);
+    if (e instanceof Anthropic.APIError) throw new ClaudeError(`Anthropic error ${e.status}: ${e.message}`);
+    throw new ClaudeError("Couldn't reach Anthropic.");
+  }
+}

@@ -47,6 +47,7 @@ Format: **Decision** — why. *(date, PT)*
 - **The voice loop goes into BuildSight** (not a separate FixSight app): listen with Azure, think with Claude, speak with Cartesia, on the build screen. *(Sat Oct 24, ~1 PM)*
 - **Speech to text: Azure AI Speech in the browser** (`microsoft-cognitiveservices-speech-sdk` 1.53). `GET /api/speech-token` trades the key for a 10-minute token (reused for 9 min), so the key never reaches the browser. The connection is opened when the build screen loads, so the first press starts fast. *(Sat Oct 24, ~1 PM)*
 - **Push-to-talk first: hold the mic button or hold M** (Space is already Check build). Words show while you speak; releasing sends the sentence. Hands-free mode comes after the full loop works. *(Sat Oct 24, ~1 PM)*
+- **Voice questions: `POST /api/assist`** takes the question, the latest camera frame, recent turns, and the current manual step; streams plain text back. Claude Sonnet 5.5 with thinking off (`between_tools`) and low effort, for speed: **~1.4 s to the first word**, ~2.2 s total. The prompt keeps answers spoken-style: 1–3 sentences, one step at a time, safety first, asks for a closer look instead of guessing. Refusal fallback on. *(Sat Oct 24, ~1:30 PM)*
 
 ## Hologram / interactive UI
 

@@ -4,7 +4,9 @@
 // Hold the button, or hold the M key, to talk.
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { AssistRequest } from "@/app/api/assist/route";
 import { Listener } from "@/lib/listen";
+import { speak } from "@/lib/speech";
 
 export type VoiceStatus = "idle" | "listening" | "thinking" | "speaking";
 type Line = { who: "you" | "assistant"; text: string };
@@ -23,7 +25,13 @@ const STATUS_DOT: Record<VoiceStatus, string> = {
   speaking: "bg-sky-300 animate-pulse",
 };
 
-export default function VoicePanel() {
+type Props = {
+  getFrame?: () => string | null; // latest camera frame, grabbed when you stop talking
+  context?: Pick<AssistRequest, "manual" | "step">;
+  muted?: boolean;
+};
+
+export default function VoicePanel({ getFrame, context, muted }: Props) {
   const [status, setStatus] = useState<VoiceStatus>("idle");
   const [lines, setLines] = useState<Line[]>([]);
   const [interim, setInterim] = useState("");
@@ -33,6 +41,11 @@ export default function VoicePanel() {
   const starting = useRef<Promise<void> | null>(null);
   const held = useRef(false);
   const scroller = useRef<HTMLDivElement>(null);
+  const linesRef = useRef<Line[]>([]);
+  linesRef.current = lines;
+  const props = useRef({ getFrame, context, muted });
+  props.current = { getFrame, context, muted };
+  const asking = useRef<AbortController | null>(null);
 
   useEffect(() => {
     const l = new Listener({
@@ -45,7 +58,10 @@ export default function VoicePanel() {
     });
     listener.current = l;
     l.warm().catch(() => {}); // errors show on first press instead
-    return () => l.close();
+    return () => {
+      l.close();
+      asking.current?.abort();
+    };
   }, []);
 
   useEffect(() => {
@@ -71,8 +87,54 @@ export default function VoicePanel() {
     const text = await listener.current.stop();
     setInterim("");
     setStatus("idle");
-    if (text) setLines((ls) => [...ls, { who: "you", text }]);
-  }, []);
+    if (text) ask(text);
+  }, []); // ask only reads refs
+
+  // Sends the question (plus a camera frame) to Claude and shows the reply as it streams in.
+  async function ask(question: string) {
+    asking.current?.abort();
+    const ctrl = new AbortController();
+    asking.current = ctrl;
+    const { getFrame, context, muted } = props.current;
+    const history = linesRef.current.map((l) => ({ role: l.who === "you" ? ("user" as const) : ("assistant" as const), text: l.text }));
+    setLines((ls) => [...ls, { who: "you", text: question }, { who: "assistant", text: "" }]);
+    setStatus("thinking");
+
+    const setReply = (text: string) =>
+      setLines((ls) => {
+        const next = [...ls];
+        next[next.length - 1] = { who: "assistant", text };
+        return next;
+      });
+
+    try {
+      const body: AssistRequest = { question, history, frame: getFrame?.() ?? undefined, ...context };
+      const res = await fetch("/api/assist", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: ctrl.signal });
+      if (!res.ok || !res.body) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? "Couldn't get an answer.");
+      }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let reply = "";
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        reply += decoder.decode(value, { stream: true });
+        setReply(reply);
+      }
+      reply = reply.trim();
+      if (!reply) throw new Error("Got an empty answer. Try again.");
+      // Temporary: browser voice until Cartesia is wired in.
+      if (!muted) speak(reply);
+      setStatus("idle");
+    } catch (e) {
+      if (ctrl.signal.aborted) return;
+      setLines((ls) => (ls[ls.length - 1]?.who === "assistant" && !ls[ls.length - 1].text ? ls.slice(0, -1) : ls));
+      setError(e instanceof TypeError ? "Network problem. Check the connection and try again." : e instanceof Error ? e.message : "Something went wrong.");
+      setStatus("idle");
+    }
+  }
 
   // Hold M to talk (ignored while typing in a field).
   useEffect(() => {
@@ -106,7 +168,7 @@ export default function VoicePanel() {
         {lines.map((l, i) => (
           <p key={i} className={l.who === "you" ? "text-white/90" : "text-sky-200"}>
             <span className="mr-1.5 text-[10px] font-semibold uppercase text-white/40">{l.who === "you" ? "You" : "BuildSight"}</span>
-            {l.text}
+            {l.text || <span className="animate-pulse text-white/40">…</span>}
           </p>
         ))}
         {interim && (
