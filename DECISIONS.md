@@ -77,7 +77,7 @@ Format: **Decision** — why. *(date, PT)*
 - **All code is written during the event** (Cal Hacks rule). Reference repos are used for ideas only; no code copied. *(Sat Oct 24, ~1:30 AM)*
   - [FORGE](https://github.com/kaushikchaturvedula/FORGE) — ideas: grounding tool arguments against a known catalog; verbal confirmation for safety steps; auto-written work order.
   - [AR Technician Assistant](https://github.com/omer-izhaki/-ar-technician-assistant) — ideas: AI-placed highlight markers (box / point / arrow, with severity); captions for both sides; typed input fallback for loud rooms; mic level meter; end-of-session summary.
-- **Passcode lock on the whole site (`APP_PASSCODE`).** `src/proxy.ts` blocks every page and API call without the access cookie (a hash of the passcode, HttpOnly, 30 days); `/unlock` sets it. The API key itself never reaches the browser; the lock stops strangers with the link from spending it. Unset `APP_PASSCODE` = no lock. *(Sat Oct 24, ~9:30 AM)*
+- ~~Passcode lock on the whole site~~ **Removed** (Sat Oct 24, ~12 PM): not worth the friction for the demo. The API key still never reaches the browser; a spending limit on the Anthropic key is the safeguard. *(added ~9:30 AM)*
 - **Secrets live in `.env.local`** (git-ignored) and in Vercel's environment settings. Never committed. *(Sat Oct 24, ~1:30 AM)*
 
 ## Open questions
