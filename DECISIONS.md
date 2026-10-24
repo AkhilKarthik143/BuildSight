@@ -50,6 +50,8 @@ Format: **Decision** — why. *(date, PT)*
 - **Voice questions: `POST /api/assist`** takes the question, the latest camera frame, recent turns, and the current manual step; streams plain text back. Claude Sonnet 5.5 with thinking off (`between_tools`) and low effort, for speed: **~1.4 s to the first word**, ~2.2 s total. The prompt keeps answers spoken-style: 1–3 sentences, one step at a time, safety first, asks for a closer look instead of guessing. Refusal fallback on. *(Sat Oct 24, ~1:30 PM)*
 - **Voice out: Cartesia `sonic-3.6`, voice "George" (steady British male), through `POST /api/tts`,** which streams raw audio (32-bit float, 24 kHz) straight from Cartesia's bytes endpoint. ~0.35 s to first audio from Cartesia, ~0.6 s through our server. No WebSocket needed: the bytes endpoint already streams. Voice is overridable with `CARTESIA_VOICE_ID`. *(Sat Oct 24, ~2 PM)*
 - **Replies are spoken sentence by sentence while Claude is still writing:** each finished sentence goes to Cartesia right away and plays in order (very short ones are merged with the next). Talking interrupts the voice. If Cartesia fails, that sentence uses the browser's voice. *(Sat Oct 24, ~2 PM)*
+- **Hands-free mode (toggle, or H key):** always listening; a sentence is sent once you pause for 0.9 s. The mic stops while BuildSight is thinking or speaking (including step announcements) and comes back 0.3 s after the voice ends, so it never hears itself. Tapping the mic interrupts it. Push-to-talk still works alongside. *(Sat Oct 24, ~2:30 PM)*
+- **On phones with the step card collapsed, the voice panel shrinks to a round mic button** plus a one-line status/caption. *(Sat Oct 24, ~2:30 PM)*
 
 ## Hologram / interactive UI
 

@@ -84,9 +84,9 @@ export class Listener {
   // Stops listening and returns everything said since start().
   async stop(): Promise<string> {
     if (!this.running || !this.recognizer) return "";
+    this.running = false; // mark first: phrases that land while stopping still count, but nobody else can stop twice
     const recognizer = this.recognizer;
     await new Promise<void>((resolve) => recognizer.stopContinuousRecognitionAsync(resolve, () => resolve()));
-    this.running = false;
     const text = (this.phrases.length ? this.phrases.join(" ") : this.interim).trim();
     this.phrases = [];
     this.interim = "";
@@ -114,6 +114,8 @@ export class Listener {
 
     const config = sdk.SpeechConfig.fromAuthorizationToken(token, region);
     config.speechRecognitionLanguage = "en-US";
+    // A sentence ends after 0.9 s of silence (default is shorter), so a mid-sentence "um" doesn't cut you off.
+    config.setProperty(sdk.PropertyId.Speech_SegmentationSilenceTimeoutMs, "900");
     const recognizer = new sdk.SpeechRecognizer(config, sdk.AudioConfig.fromDefaultMicrophoneInput());
 
     recognizer.recognizing = (_, e) => {

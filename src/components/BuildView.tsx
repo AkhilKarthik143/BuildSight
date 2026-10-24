@@ -346,6 +346,7 @@ export default function BuildView() {
         <VoicePanel
           getFrame={() => camera.current?.capture() ?? null}
           muted={muted}
+          compact={compact}
           context={{
             manual: manual?.title,
             step: step && { number: step.number, instruction: step.instruction, parts: step.parts.map((p) => `${p.qty}x ${p.name}`), watchFor: step.watchFor },
