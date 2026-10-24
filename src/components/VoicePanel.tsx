@@ -147,7 +147,9 @@ export default function VoicePanel({ getFrame, context, muted, compact }: Props)
     setFaded(false);
     setStatus("thinking");
     const voice = muted ? null : speaker().stream();
-    const finish = () => setStatus((s) => (s === "thinking" || s === "speaking" ? "idle" : s));
+    // Done with this answer. If something else is speaking now (e.g. the next step's announcement), stay "speaking"
+    // so the mic doesn't switch back on and hear it.
+    const finish = () => setStatus((s) => (speaker().speaking ? "speaking" : s === "thinking" || s === "speaking" ? "idle" : s));
 
     const setReply = (text: string) =>
       setLines((ls) => {

@@ -40,7 +40,14 @@ function takeSentences(buffer: string, flush: boolean): [string[], string] {
     // Too short on its own: hold it and join with the next sentence.
     while (sentence.trim().length < MIN_SENTENCE) {
       const next = rest.slice(cut).match(/^([\s\S]*?[.!?…]["')\]]?)(\s+)/);
-      if (!next) break;
+      if (!next) {
+        // Last bit of the text: when flushing, keep the short sentence together with whatever is left.
+        if (flush && rest.slice(cut).trim()) {
+          sentence += " " + rest.slice(cut).trim();
+          cut = rest.length;
+        }
+        break;
+      }
       sentence += " " + next[1];
       cut += next[0].length;
     }
@@ -63,6 +70,8 @@ class Speaker {
   private generation = 0;
   private active = false;
   private nextTime = 0;
+  private cartesiaWorked = false; // once Cartesia has spoken, never fall back to the browser's different voice
+  private wake: (() => void) | null = null; // wakes an idle reply loop so a stopped reply can finish
 
   get speaking() {
     return this.active;
@@ -101,28 +110,36 @@ class Speaker {
       wake = null;
     };
 
-    // Plays sentences in order; each one's audio is requested the moment the sentence is complete.
-    const pending: Promise<ReadableStream<Uint8Array> | string>[] = [];
-    const request = (sentence: string) =>
-      fetch("/api/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: sentence }), signal: abort.signal })
-        .then((r) => (r.ok && r.body ? r.body : sentence))
-        .catch(() => sentence);
+    // Plays sentences in order. Audio is fetched for the sentence playing now and the next one only:
+    // Cartesia rejects too many requests at once, and a rejected sentence used to come out in a different voice.
+    const pending: Promise<ReadableStream<Uint8Array> | null>[] = [];
+    const fill = (next: number) => {
+      while (pending.length < queue.length && pending.length <= next + 1) pending.push(this.fetchAudio(queue[pending.length], abort.signal));
+    };
+    this.wake = notify;
 
     const run = (async () => {
-      let i = 0;
+      let next = 0;
       for (;;) {
         if (gen !== this.generation) return;
-        if (i < pending.length) {
-          const audio = await pending[i];
-          const sentence = queue[i++];
+        if (next < queue.length) {
+          fill(next);
+          const audio = await pending[next];
+          const sentence = queue[next++];
+          fill(next); // start fetching the one after while this one plays
           if (gen !== this.generation) return;
-          this.setActive(true);
-          if (typeof audio === "string") {
-            await this.waitForQueuedAudio(gen);
-            await browserSay(sentence); // Cartesia failed: fall back to the browser voice
-          } else {
+          if (audio) {
+            this.cartesiaWorked = true;
+            this.setActive(true);
             await this.play(audio, gen);
+          } else if (!this.cartesiaWorked) {
+            // Cartesia isn't working at all (e.g. no key): use the browser voice so there's still sound.
+            this.setActive(true);
+            await this.waitForQueuedAudio(gen);
+            if (gen !== this.generation) return;
+            await browserSay(sentence);
           }
+          // Otherwise skip this sentence rather than switch voices mid-answer; the text is still on screen.
           continue;
         }
         if (ended) break;
@@ -133,10 +150,8 @@ class Speaker {
     })();
 
     const add = (sentences: string[]) => {
-      for (const s of sentences) {
-        queue.push(s);
-        pending.push(request(s));
-      }
+      queue.push(...sentences);
+      if (sentences.length && gen === this.generation) this.setActive(true); // about to speak: keep the mic off
       if (sentences.length) notify();
     };
 
@@ -164,6 +179,8 @@ class Speaker {
 
   stop() {
     this.generation++;
+    this.wake?.(); // let the old reply's loop see it was stopped and exit
+    this.wake = null;
     this.abort?.abort();
     this.abort = null;
     for (const s of this.sources) {
@@ -181,6 +198,22 @@ class Speaker {
     if (this.active === on) return;
     this.active = on;
     this.listeners.forEach((fn) => fn(on));
+  }
+
+  // Gets one sentence's audio stream from /api/tts, retrying briefly if Cartesia is busy. Null if it can't.
+  private async fetchAudio(text: string, signal: AbortSignal): Promise<ReadableStream<Uint8Array> | null> {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (signal.aborted) return null;
+      try {
+        const r = await fetch("/api/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }), signal });
+        if (r.ok && r.body) return r.body;
+        if (r.status === 503 || r.status === 400) return null; // not set up / bad input: retrying won't help
+      } catch {
+        if (signal.aborted) return null;
+      }
+      await new Promise((res) => setTimeout(res, 250 * (attempt + 1)));
+    }
+    return null;
   }
 
   // Schedules each chunk of audio right after the previous one, as it downloads.
