@@ -47,6 +47,7 @@ Format: **Decision** — why. *(date, PT)*
 - **Level 2 (maybe): 3D replay of the step** using a community LDraw model of the set, if one exists for the chosen set. *(Sat Oct 24, ~1:15 AM)*
 - **Level 3 (out): hologram locked onto the real bricks (true AR).** — Needs precise tracking, and iPhone Safari doesn't support WebXR AR. Roadmap only. *(Sat Oct 24, ~1:15 AM)*
 - **First hologram pieces are generated in code** (bricks and plates from stud size and color) instead of loading LDraw files. — No parts library to bundle; covers most pieces in a Creator-style set. LDraw for slopes and special parts later. *(Sat Oct 24, ~1:30 AM)*
+- **Practice mode (stretch, Sat evening): build with holograms only, no LEGO needed.** Drag or tap to place the glowing piece; it snaps in if right, shakes if wrong; score and timer. — Not the main product (Microsoft's track is "Built for the Real World", and it skips the camera check), but it doubles as worker training before touching the real line, lets judges try it on their own phones, and is a fallback if the camera or Wi-Fi fails. *(Sat Oct 24, ~2 AM)*
 - **Marker position comes from the model as an approximate location,** not exact pixels. Fine because the camera is fixed overhead. *(Sat Oct 24, ~1:15 AM)*
 
 ## Prizes
