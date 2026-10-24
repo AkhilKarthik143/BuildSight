@@ -50,6 +50,18 @@ Format: **Decision** — why. *(date, PT)*
 - **Practice mode (stretch, Sat evening): build with holograms only, no LEGO needed.** Drag or tap to place the glowing piece; it snaps in if right, shakes if wrong; score and timer. — Not the main product (Microsoft's track is "Built for the Real World", and it skips the camera check), but it doubles as worker training before touching the real line, lets judges try it on their own phones, and is a fallback if the camera or Wi-Fi fails. *(Sat Oct 24, ~2 AM)*
 - **Marker position comes from the model as an approximate location,** not exact pixels. Fine because the camera is fixed overhead. *(Sat Oct 24, ~1:15 AM)*
 
+## Hub and manuals
+
+- **Home page is a hub, Jarvis-inspired HUD look** (dark navy, cyan glow, rotating rings, corner-bracket panels, Rajdhani + Geist Mono). Inspired by the style only; no Marvel names, logos or assets. *(Sat Oct 24, ~3 AM)*
+- **Manual search: a 4–7 digit number searches LEGO by set number** (scraped from lego.com's building-instructions page: book names, sizes, PDFs, covers); **anything else searches IKEA** (IKEA's public product search, then each product page's assembly PDFs, keeping only PDFs named after the product, de-duplicated across color variants). *(Sat Oct 24, ~3 AM)*
+- **Upload any PDF** by button or drag-and-drop anywhere on the hub. *(Sat Oct 24, ~3 AM)*
+- **PDFs load through our own domain via Next.js rewrites** (`/manual-pdf/lego/…`, `/manual-pdf/ikea/…`) because browsers can't fetch them from lego.com/ikea.com directly; rewrites avoid Vercel's function size limit (LEGO books are ~20 MB). *(Sat Oct 24, ~3 AM)*
+- **PDF pages render in the browser with pdf.js.** *(Sat Oct 24, ~3 AM)*
+- **Library lives in the browser (IndexedDB) for now:** manual list, uploaded PDFs, reading progress, and extracted steps per page. Each device has its own library until we add shared storage (Azure Blob is the candidate). *(Sat Oct 24, ~3 AM)*
+- **Steps are extracted one page at a time, when you reach it** (`POST /api/extract`, ~3.5 s/page, cached), instead of reading the whole book upfront. Pages with no steps are skipped automatically. Unnumbered steps (common in IKEA) get reading-order numbers. *(Sat Oct 24, ~3 AM)*
+- **Build screen starts at the first page with steps** (or where you left off), shows the step's manual picture as a glowing "target" panel, the next part as a hologram, and a **Check build** button (also Space/Enter). A verified step auto-advances. *(Sat Oct 24, ~3 AM)*
+- **Voice out uses the browser's built-in speech for now** (prefers a British male voice), with a mute toggle. Cartesia replaces it later. *(Sat Oct 24, ~3 AM)*
+
 ## Prizes
 
 - **Primary: Microsoft "Built for the Real World" / FDE.** Also Anthropic and Cartesia, which the build covers anyway. Visa only as an optional add-on. *(Sat Oct 24, ~1 AM)*

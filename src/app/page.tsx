@@ -1,5 +1,5 @@
-import BuildView from "@/components/BuildView";
+import Hub from "@/components/Hub";
 
 export default function Home() {
-  return <BuildView />;
+  return <Hub />;
 }
