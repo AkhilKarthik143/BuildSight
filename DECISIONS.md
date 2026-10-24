@@ -53,6 +53,7 @@ Format: **Decision** — why. *(date, PT)*
 - **Hands-free mode (toggle, or H key):** always listening; a sentence is sent once you pause for 0.9 s. The mic stops while BuildSight is thinking or speaking (including step announcements) and comes back 0.3 s after the voice ends, so it never hears itself. Tapping the mic interrupts it. Push-to-talk still works alongside. *(Sat Oct 24, ~2:30 PM)*
 - **On phones with the step card collapsed, the voice panel shrinks to a round mic button** plus a one-line status/caption. *(Sat Oct 24, ~2:30 PM)*
 - **The voice panel is a small pill by default** (~44 px: mic button, one-line status, hands-free toggle), because the full panel was too big on phones. The latest question and answer open below it while you talk or it answers, and fold away 6 s after it finishes. Tap the status line to keep the whole transcript open. *(Sat Oct 24, ~3 PM)*
+- **Voice questions know which part you tapped:** if a part chip is selected, Claude is told, so "where does this piece go?" works. *(Sat Oct 24, ~3:15 PM)*
 - **Each spoken question carries the camera frame grabbed the moment you stop talking** (from the build screen's live camera, max 1024 px JPEG). A small thumbnail of that frame shows next to the question in the transcript, so judges can see what BuildSight saw. No camera means the question goes without a photo, and Claude is told so. *(Sat Oct 24, ~2:45 PM)*
 
 ## Hologram / interactive UI

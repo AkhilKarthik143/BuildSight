@@ -10,7 +10,7 @@ export type AssistRequest = {
   question: string;
   frame?: string; // camera frame, JPEG data URL
   history?: { role: "user" | "assistant"; text: string }[];
-  step?: { number: number | string; instruction: string; parts?: string[]; watchFor?: string[] };
+  step?: { number: number | string; instruction: string; parts?: string[]; watchFor?: string[]; selectedPart?: string };
   manual?: string; // title of what they're building
 };
 
@@ -30,6 +30,7 @@ function context(req: AssistRequest): string {
   if (req.step) {
     lines.push(`Current manual step ${req.step.number}: ${req.step.instruction}`);
     if (req.step.parts?.length) lines.push(`Parts for this step: ${req.step.parts.join(", ")}.`);
+    if (req.step.selectedPart) lines.push(`They tapped this part on screen, so "this piece" likely means: ${req.step.selectedPart}.`);
     if (req.step.watchFor?.length) lines.push(`Common mistakes here: ${req.step.watchFor.join("; ")}.`);
   }
   return lines.join("\n");

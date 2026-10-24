@@ -435,7 +435,7 @@ export default function BuildView() {
           compact={compact}
           context={{
             manual: manual?.title,
-            step: step && { number: step.number, instruction: step.instruction, parts: step.parts.map((p) => `${p.qty}x ${p.name}`), watchFor: step.watchFor },
+            step: step && { number: step.number, instruction: step.instruction, parts: step.parts.map((p) => `${p.qty}x ${p.name}`), watchFor: step.watchFor, selectedPart: selectedPart != null ? step.parts[selectedPart]?.name : undefined },
           }}
         />
       </div>
