@@ -81,6 +81,7 @@ Format: **Decision** — why. *(date, PT)*
 - **PDF pages render in the browser with pdf.js.** *(Sat Oct 24, ~3 AM)*
 - **Library lives in the browser (IndexedDB) for now:** manual list, uploaded PDFs, reading progress, and extracted steps per page. Each device has its own library until we add shared storage (Azure Blob is the candidate). *(Sat Oct 24, ~3 AM)*
 - **Steps are extracted one page at a time, when you reach it** (`POST /api/extract`, ~3.5 s/page, cached), instead of reading the whole book upfront. Pages with no steps are skipped automatically. Unnumbered steps (common in IKEA) get reading-order numbers. *(Sat Oct 24, ~3 AM)*
+- **Pre-read demo manual: 31136 Exotic Parrot, Book 1** (`scripts/preread.py` → `public/steps/6455750.json` + 61 page images, 4.5 MB). 68 pages, 122 steps, read once in 82 s. The app checks for a pre-read copy first; if found it needs no PDF and no Claude calls for steps, so it opens in ~0.4 s and works on bad Wi-Fi. Other manuals still read live. *(Sat Oct 24, ~2 PM)*
 - **Faster manual opening** *(Sat Oct 24, ~12:30 PM)*:
   - pdf.js loads only the byte ranges it needs (`disableAutoFetch`, 1 MB chunks) instead of the whole file; LEGO books are ~20 MB and a full download through the proxy took minutes or failed.
   - The PDF starts loading the moment a card is tapped, before the build screen mounts.

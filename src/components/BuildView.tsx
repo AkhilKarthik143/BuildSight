@@ -14,6 +14,7 @@ import CameraFeed, { type CameraHandle } from "@/components/CameraFeed";
 import VoicePanel from "@/components/VoicePanel";
 import { getManual, getPageSteps, saveManual, savePageSteps, type Manual } from "@/lib/manuals";
 import { openManualPdf, renderPage } from "@/lib/pdf";
+import { loadPrebuilt, type Prebuilt } from "@/lib/prebuilt";
 import { speak, stopSpeaking } from "@/lib/speech";
 
 const Hologram = dynamic(() => import("@/components/Hologram"), { ssr: false });
@@ -101,20 +102,41 @@ function limiter(n: number) {
   };
 }
 
-type PageJob = { image: Promise<string>; steps: Promise<ExtractedStep[]> };
+// Where page images come from: pre-read images when we have them, otherwise the PDF (opened only if needed).
+type PageSource = { numPages: number; prebuilt: Prebuilt | null; render: (page: number) => Promise<string> };
+
+function makeSource(m: Manual, prebuilt: Prebuilt | null, numPages: number, doc?: PDFDocumentProxy): PageSource {
+  let pdf: Promise<PDFDocumentProxy> | null = doc ? Promise.resolve(doc) : null;
+  return {
+    numPages,
+    prebuilt,
+    render: (page) =>
+      prebuilt?.pages[String(page)]?.length
+        ? Promise.resolve(`/steps/${prebuilt.id}/${page}.jpg`)
+        : (pdf ??= openManualPdf(m)).then((d) => renderPage(d, page, 1200)),
+  };
+}
+
+type PageJob = { image: () => Promise<string>; steps: Promise<ExtractedStep[]> };
 
 // Renders and reads pages, each at most once: shared by the current page and the read-ahead.
-function pageReader(manualId: string, doc: PDFDocumentProxy) {
+function pageReader(manualId: string, source: PageSource) {
   const jobs = new Map<number, PageJob>();
   const limit = limiter(MAX_PARALLEL);
   return (page: number): PageJob => {
     const existing = jobs.get(page);
     if (existing) return existing;
-    const image = renderPage(doc, page, 1200);
+    let rendered: Promise<string> | null = null;
+    const image = () => (rendered ??= source.render(page));
     const steps = (async () => {
       const cached = await getPageSteps<ExtractedStep>(manualId, page);
       if (cached) return cached;
-      const pageImage = await image;
+      const pre = source.prebuilt?.pages[String(page)];
+      if (pre) {
+        await savePageSteps(manualId, page, pre);
+        return pre;
+      }
+      const pageImage = await image();
       const data = await limit(async () => {
         const res = await fetch("/api/extract", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ page: pageImage }) });
         const body = await res.json();
@@ -126,7 +148,7 @@ function pageReader(manualId: string, doc: PDFDocumentProxy) {
     })();
     const job = { image, steps };
     // A failed page can be retried.
-    Promise.all([image, steps]).catch(() => jobs.delete(page));
+    steps.catch(() => jobs.delete(page));
     jobs.set(page, job);
     return job;
   };
@@ -161,7 +183,7 @@ export default function BuildView() {
   const direction = useRef<1 | -1>(1);
 
   const [manual, setManual] = useState<Manual | null>(null);
-  const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
+  const [doc, setDoc] = useState<PageSource | null>(null);
   const [page, setPage] = useState(0);
   const [pageImage, setPageImage] = useState<string | null>(null);
   const [steps, setSteps] = useState<ExtractedStep[]>([]);
@@ -228,13 +250,16 @@ export default function BuildView() {
       if (!m) return setPhase({ kind: "error", message: "That manual isn't in your library on this device." });
       setManual(m);
       try {
-        const d = await openManualPdf(m);
+        // A pre-read manual needs no PDF and no Claude calls; otherwise open the PDF.
+        const prebuilt = await loadPrebuilt(m);
+        const pdf = prebuilt ? undefined : await openManualPdf(m);
+        const numPages = prebuilt?.pageCount ?? pdf!.numPages;
         if (cancelled) return;
-        const updated = { ...m, pageCount: d.numPages, openedAt: Date.now() };
+        const updated = { ...m, pageCount: numPages, openedAt: Date.now() };
         await saveManual(updated);
         setManual(updated);
-        setDoc(d);
-        turnTo(Math.min(m.page, d.numPages));
+        setDoc(makeSource(m, prebuilt, numPages, pdf));
+        turnTo(Math.min(m.page, numPages));
       } catch (e) {
         setPhase({ kind: "error", message: e instanceof Error ? e.message : "Couldn't open the PDF." });
       }
@@ -252,8 +277,10 @@ export default function BuildView() {
     let cancelled = false;
     for (let k = 1; k <= LOOKAHEAD && page + k <= doc.numPages; k++) reader(page + k);
     const job = reader(page);
-    job.image.then((img) => !cancelled && setPreview(img)).catch(() => {});
-    Promise.all([job.image, job.steps])
+    const knownEmpty = doc.prebuilt?.pages[String(page)]?.length === 0;
+    if (!knownEmpty) job.image().then((img) => !cancelled && setPreview(img)).catch(() => {});
+    job.steps
+      .then(async (found) => [found.length ? await job.image() : "", found] as const)
       .then(([image, found]) => {
         if (cancelled) return;
         if (found.length === 0) {

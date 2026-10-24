@@ -62,7 +62,10 @@ export default function Hub() {
     setOpening(r.pdfPath);
     const m = await addFromResult(r);
     // Start downloading the PDF now; the build screen picks up the same in-flight load.
-    import("@/lib/pdf").then(({ openManualPdf }) => openManualPdf(m).catch(() => {}));
+    // (skipped for pre-read manuals, which don't need the PDF)
+    Promise.all([import("@/lib/pdf"), import("@/lib/prebuilt")]).then(async ([{ openManualPdf }, { loadPrebuilt }]) => {
+      if (!(await loadPrebuilt(m))) openManualPdf(m).catch(() => {});
+    });
     router.push(`/build/${m.id}`);
   }
 
