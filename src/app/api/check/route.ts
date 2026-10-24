@@ -1,6 +1,8 @@
 // Step check: compares the camera frame to the manual's picture for this step
 // (and the previous step), and says whether the step is done and what's wrong.
 
+import { firstJsonObject } from "@/lib/json";
+
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const DEFAULT_MODEL = "anthropic/claude-sonnet-5.5";
 const MAX_IMAGE_CHARS = 4_000_000;
@@ -43,10 +45,9 @@ function isImage(s: unknown): s is string {
 
 // The model is asked for bare JSON; tolerate a stray code fence anyway.
 function parseResult(text: string): CheckResult | null {
-  const match = text.match(/\{[\s\S]*\}/);
-  if (!match) return null;
   try {
-    const r = JSON.parse(match[0]);
+    const r = firstJsonObject(text) as { step_complete?: unknown; confidence?: unknown; issues?: unknown; say?: unknown } | null;
+    if (!r) return null;
     if (typeof r.step_complete !== "boolean" || typeof r.confidence !== "number") return null;
     return {
       step_complete: r.step_complete,

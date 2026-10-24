@@ -102,7 +102,7 @@ export default function Hub() {
             initial={{ opacity: 0, y: 12, filter: "blur(8px)" }}
             animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
             transition={{ duration: 0.6 }}
-            className="font-hud text-4xl font-semibold tracking-wide text-white sm:text-5xl"
+            className="text-sheen text-[2.6rem] font-semibold leading-[1.05] tracking-[-0.035em] sm:text-7xl"
           >
             What are we building?
           </motion.h1>
@@ -115,18 +115,18 @@ export default function Hub() {
               e.preventDefault();
               search(query);
             }}
-            className="hud-panel holo-glow mt-10 flex w-full max-w-2xl items-center gap-3 rounded-2xl p-2 pl-5"
+            className="hud-panel holo-glow mt-10 flex w-full max-w-2xl items-center gap-3 rounded-2xl p-2 pl-5 transition focus-within:border-sky-300/40 focus-within:shadow-[0_0_0_4px_rgba(92,200,255,0.12),0_20px_60px_-20px_rgba(92,200,255,0.5)]"
           >
-            <svg viewBox="0 0 24 24" className="h-5 w-5 shrink-0 text-holo" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg viewBox="0 0 24 24" className="h-5 w-5 shrink-0 text-white/40" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="11" cy="11" r="7" />
               <path d="m20 20-3.5-3.5" />
             </svg>
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="31163  ·  lack side table  ·  kallax"
+              placeholder="LEGO set number or IKEA product"
               aria-label="Search manuals"
-              className="min-w-0 flex-1 bg-transparent py-3 font-mono text-base text-white placeholder:text-white/30 focus:outline-none"
+              className="min-w-0 flex-1 bg-transparent py-3 text-base text-white placeholder:text-white/35 focus:outline-none"
             />
             <AnimatePresence>
               {detected && (
@@ -134,7 +134,7 @@ export default function Hub() {
                   initial={{ opacity: 0, scale: 0.9 }}
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0 }}
-                  className="hidden shrink-0 rounded-sm border border-holo/40 px-2 py-1 font-mono text-[10px] uppercase tracking-widest text-holo sm:block"
+                  className="hidden shrink-0 rounded-md bg-white/5 px-2 py-1 text-[11px] font-medium text-white/50 ring-1 ring-white/10 sm:block"
                 >
                   {detected}
                 </motion.span>
@@ -143,27 +143,31 @@ export default function Hub() {
             <button
               type="submit"
               disabled={searching}
-              className="shrink-0 rounded-xl bg-holo px-5 py-3 font-hud text-sm font-bold uppercase tracking-[0.2em] text-ink transition hover:brightness-110 active:scale-95 disabled:opacity-60"
+              className="shrink-0 rounded-xl bg-gradient-to-b from-sky-300 to-sky-500 px-5 py-3 text-sm font-semibold text-ink shadow-[inset_0_1px_0_rgba(255,255,255,0.4),0_6px_20px_-6px_rgba(92,200,255,0.7)] transition hover:brightness-110 active:scale-95 disabled:opacity-60"
             >
-              {searching ? "Searching" : "Search"}
+              {searching ? "Searching…" : "Search"}
             </button>
           </motion.form>
 
-          <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+          <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
+            <span className="mr-1 text-xs text-white/35">Try</span>
             {QUICK_PICKS.map((p) => (
               <button
                 key={p.q}
                 onClick={() => search(p.q)}
-                className="rounded-full border border-holo/25 bg-holo/5 px-3 py-1.5 font-mono text-[11px] text-holo/80 transition hover:border-holo/60 hover:text-holo"
+                className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-white/70 transition hover:border-sky-300/40 hover:bg-sky-300/10 hover:text-white"
               >
                 {p.label}
               </button>
             ))}
             <button
               onClick={() => fileInput.current?.click()}
-              className="rounded-full border border-dashed border-holo/40 px-3 py-1.5 font-mono text-[11px] text-holo/80 transition hover:border-holo hover:text-holo"
+              className="flex items-center gap-1.5 rounded-full border border-dashed border-white/20 px-3 py-1.5 text-xs text-white/70 transition hover:border-sky-300/60 hover:text-white"
             >
-              ⤒ Upload PDF
+              <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M12 16V4m0 0-4 4m4-4 4 4M4 20h16" />
+              </svg>
+              Upload PDF
             </button>
             <input ref={fileInput} type="file" accept="application/pdf,.pdf" hidden onChange={(e) => upload(e.target.files?.[0])} />
           </div>
@@ -184,9 +188,9 @@ export default function Hub() {
                 count={searching || error ? undefined : results.length}
               />
               {searching && <div className="scan-bar mt-4 h-0.5 w-full rounded-full" />}
-              {error && <p className="mt-4 font-mono text-sm text-rose-300">{error}</p>}
+              {error && <p className="mt-4 text-sm text-rose-300">{error}</p>}
               {!searching && !error && results.length === 0 && (
-                <p className="mt-4 font-mono text-sm text-white/50">
+                <p className="mt-4 text-sm text-white/50">
                   No manuals found. LEGO needs a set number (e.g. 31163); for IKEA try the product name.
                 </p>
               )}
@@ -214,8 +218,8 @@ export default function Hub() {
         <section className="mt-16">
           <SectionTitle label="Your manuals" count={library?.length} />
           {library && library.length === 0 && (
-            <div className="hud-panel mt-5 rounded-xl p-8 text-center">
-              <p className="font-hud text-lg font-semibold text-white/80">No manuals yet</p>
+            <div className="mt-5 rounded-2xl border border-dashed border-white/10 p-10 text-center">
+              <p className="text-base font-semibold text-white/80">No manuals yet</p>
               <p className="mt-1 text-sm text-white/50">Search a LEGO set number or IKEA product, or drop a PDF anywhere on this page.</p>
             </div>
           )}
@@ -250,11 +254,9 @@ export default function Hub() {
             exit={{ opacity: 0 }}
             className="pointer-events-none fixed inset-0 z-50 grid place-items-center bg-ink/80 backdrop-blur-sm"
           >
-            <div className="hud-panel holo-glow rounded-2xl border-dashed px-12 py-10 text-center">
-              <p className="font-hud text-2xl font-semibold uppercase tracking-[0.2em] holo-text">
-                {opening === "upload" ? "Loading manual" : "Drop manual to load"}
-              </p>
-              <p className="mt-2 font-mono text-xs text-holo/70">PDF · any build instructions</p>
+            <div className="hud-panel holo-glow rounded-3xl border-dashed px-14 py-12 text-center">
+              <p className="text-2xl font-semibold tracking-tight">{opening === "upload" ? "Opening manual…" : "Drop to add manual"}</p>
+              <p className="mt-2 text-sm text-white/50">Any PDF build instructions</p>
             </div>
           </motion.div>
         )}
@@ -265,11 +267,9 @@ export default function Hub() {
 
 function SectionTitle({ label, count }: { label: string; count?: number }) {
   return (
-    <div className="flex items-center gap-3">
-      <span className="h-px w-6 bg-holo" />
-      <h2 className="font-hud text-sm font-semibold uppercase tracking-[0.3em] text-holo">{label}</h2>
-      {count != null && count > 0 && <span className="text-xs text-white/40">{count}</span>}
-      <span className="h-px flex-1 bg-gradient-to-r from-holo/40 to-transparent" />
+    <div className="flex items-center gap-2.5 border-b border-white/[0.07] pb-3">
+      <h2 className="text-sm font-semibold tracking-tight text-white/90">{label}</h2>
+      {count != null && count > 0 && <span className="rounded-full bg-white/[0.06] px-2 py-0.5 text-[11px] text-white/50">{count}</span>}
     </div>
   );
 }

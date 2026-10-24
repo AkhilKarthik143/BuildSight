@@ -1,5 +1,7 @@
 // Reads one manual page image and returns the build steps on it.
 
+import { firstJsonObject } from "@/lib/json";
+
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const DEFAULT_MODEL = "anthropic/claude-sonnet-5.5";
 const MAX_IMAGE_CHARS = 6_000_000;
@@ -43,10 +45,8 @@ Reply with JSON only, no prose:
 {"steps": [{"number": 1, "instruction": "...", "parts": [{"name": "...", "color": "#rrggbb", "qty": 1, "shape": "brick", "studsX": 2, "studsY": 4}], "watchFor": ["..."], "box": {"left": 0, "top": 0, "right": 50, "bottom": 95}}]}`;
 
 function parse(text: string): ExtractedStep[] | null {
-  const match = text.match(/\{[\s\S]*\}/);
-  if (!match) return null;
   try {
-    const steps = JSON.parse(match[0])?.steps;
+    const steps = (firstJsonObject(text) as { steps?: unknown } | null)?.steps;
     if (!Array.isArray(steps)) return null;
     const pct = (n: unknown, fallback: number) => {
       const v = Number(n);

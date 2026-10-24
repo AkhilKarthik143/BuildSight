@@ -211,12 +211,12 @@ export default function BuildView() {
 
       {/* top bar */}
       <header className="absolute inset-x-0 top-0 z-20 flex items-center justify-between gap-3 px-4 pt-[max(0.75rem,env(safe-area-inset-top))] sm:px-6">
-        <Link href="/" className="hud-panel flex items-center gap-2 rounded-lg px-3 py-2 font-hud text-sm font-semibold uppercase tracking-[0.2em] text-holo transition hover:bg-holo/10">
-          ◂ Hub
+        <Link href="/" className="hud-panel flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-medium text-white/85 transition hover:text-white">
+          ← Hub
         </Link>
         <div className="min-w-0 flex-1 text-center">
-          <p className="truncate font-hud text-base font-semibold uppercase tracking-[0.15em] holo-text">{manual?.title ?? "BuildSight"}</p>
-          <p className="truncate font-mono text-[10px] uppercase tracking-[0.2em] text-holo/60">
+          <p className="truncate text-[15px] font-semibold tracking-tight">{manual?.title ?? "BuildSight"}</p>
+          <p className="truncate text-[11px] text-white/50">
             {manual?.subtitle}
             {doc && page > 0 ? ` · Page ${page}/${doc.numPages}` : ""}
           </p>
@@ -226,7 +226,7 @@ export default function BuildView() {
             setMuted((m) => !m);
             stopSpeaking();
           }}
-          className="hud-panel rounded-lg px-3 py-2 font-mono text-[11px] uppercase tracking-widest text-holo"
+          className="hud-panel rounded-xl px-3 py-2 text-xs font-medium text-white/85"
           aria-pressed={muted}
         >
           {muted ? "Voice off" : "Voice on"}
@@ -246,7 +246,7 @@ export default function BuildView() {
               </g>
               <path d="M100 20v20M100 160v20M20 100h20M160 100h20" stroke="rgba(79,195,255,0.9)" strokeWidth="2" />
             </svg>
-            <p className="mt-2 text-center font-mono text-xs uppercase tracking-[0.3em] text-holo holo-text">Analyzing build</p>
+            <p className="mt-2 text-center text-xs font-medium text-sky-200 holo-text">Checking your build…</p>
           </motion.div>
         )}
       </AnimatePresence>
@@ -263,8 +263,8 @@ export default function BuildView() {
           >
             <button onClick={() => setShowManual((s) => !s)} className="hud-panel holo-glow block w-full overflow-hidden rounded-xl text-left">
               <div className="flex items-center justify-between px-3 pt-2">
-                <span className="font-mono text-[9px] uppercase tracking-[0.25em] text-holo sm:text-[10px]">Target · Step {step?.number}</span>
-                <span className="font-mono text-[9px] text-holo/60">{showManual ? "holo" : "real"}</span>
+                <span className="text-[10px] font-semibold text-white/70 sm:text-[11px]">Step {step?.number} · manual</span>
+                <span className="text-[10px] text-white/40">{showManual ? "Tap for color" : "Tap for glow"}</span>
               </div>
               <div className="relative m-2 overflow-hidden rounded-lg bg-ink/60">
                 <img src={target} alt={`Manual picture for step ${step?.number}`} className={`w-full ${showManual ? "holo-image" : ""}`} />
@@ -279,7 +279,7 @@ export default function BuildView() {
         {phase.kind === "ready" && part && (
           <div className="relative mx-auto h-36 w-36 sm:mx-0 sm:h-48 sm:w-48">
             <Hologram part={part} />
-            <span className="absolute -bottom-3 left-1/2 -translate-x-1/2 whitespace-nowrap font-mono text-[10px] uppercase tracking-[0.2em] text-holo/80">Next part</span>
+            <span className="absolute -bottom-3 left-1/2 -translate-x-1/2 whitespace-nowrap text-[11px] font-medium text-sky-200/80">Next part</span>
           </div>
         )}
 
@@ -290,11 +290,11 @@ export default function BuildView() {
             animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
             exit={{ opacity: 0, y: -12, filter: "blur(6px)" }}
             transition={{ type: "spring", stiffness: 260, damping: 26 }}
-            className="hud-panel holo-glow rounded-2xl p-5"
+            className="hud-panel holo-glow rounded-3xl p-5"
           >
             {phase.kind === "loading" && (
               <div>
-                <p className="font-mono text-xs uppercase tracking-[0.3em] text-holo">{phase.label}</p>
+                <p className="text-xs font-semibold text-sky-300">{phase.label}</p>
                 <div className="scan-bar mt-3 h-1 rounded-full" />
                 <p className="mt-3 text-sm text-white/50">Reading the instructions so I can walk you through them.</p>
               </div>
@@ -302,7 +302,7 @@ export default function BuildView() {
 
             {phase.kind === "error" && (
               <div>
-                <p className="font-mono text-xs uppercase tracking-[0.3em] text-rose-300">System error</p>
+                <p className="text-xs font-semibold text-rose-300">System error</p>
                 <p className="mt-2 text-sm text-white/80">{phase.message}</p>
                 <div className="mt-4 flex gap-2">
                   <Link href="/" className="rounded-xl border border-white/15 px-4 py-2.5 text-sm">Back to hub</Link>
@@ -323,8 +323,8 @@ export default function BuildView() {
 
             {phase.kind === "done" && (
               <div>
-                <p className="font-mono text-xs uppercase tracking-[0.3em] text-emerald-300">Build complete</p>
-                <p className="mt-2 font-hud text-2xl font-semibold">That&apos;s the last step in this manual.</p>
+                <p className="text-xs font-semibold text-emerald-300">Build complete</p>
+                <p className="mt-2 text-2xl font-semibold tracking-tight">That&apos;s the last step in this manual.</p>
                 <Link href="/" className="mt-4 inline-block rounded-xl bg-holo px-4 py-2.5 text-sm font-semibold text-ink">Back to hub</Link>
               </div>
             )}
@@ -332,8 +332,8 @@ export default function BuildView() {
             {phase.kind === "ready" && step && (
               <>
                 <div className="flex items-baseline justify-between">
-                  <p className="font-hud text-sm font-semibold uppercase tracking-[0.3em] text-holo">Step {step.number}</p>
-                  <p className="font-mono text-[10px] text-white/40">
+                  <p className="text-xs font-semibold text-sky-300">Step {step.number}</p>
+                  <p className="text-[11px] text-white/40">
                     {stepIdx + 1}/{steps.length} on page {page}
                   </p>
                 </div>
@@ -376,7 +376,7 @@ export default function BuildView() {
                         check.message
                       ) : (
                         <>
-                          <p className="font-mono text-[10px] uppercase tracking-[0.25em]">
+                          <p className="text-[11px] font-semibold">
                             {{ pass: "Verified", fix: "Hold on", notyet: "Not done yet", unsure: "Need a better look" }[verdict ?? "unsure"]} ·{" "}
                             {Math.round(check.result.confidence * 100)}%
                           </p>
@@ -385,11 +385,11 @@ export default function BuildView() {
                             <div className="mt-3 grid grid-cols-2 gap-2">
                               <figure>
                                 <img src={target ?? ""} alt="Manual" className="rounded-md bg-white" />
-                                <figcaption className="mt-1 font-mono text-[9px] uppercase tracking-widest text-white/50">Manual</figcaption>
+                                <figcaption className="mt-1 text-[10px] text-white/50">Manual</figcaption>
                               </figure>
                               <figure>
                                 <img src={check.frame} alt="Your build" className="rounded-md" />
-                                <figcaption className="mt-1 font-mono text-[9px] uppercase tracking-widest text-white/50">Your build</figcaption>
+                                <figcaption className="mt-1 text-[10px] text-white/50">Your build</figcaption>
                               </figure>
                             </div>
                           )}
@@ -400,17 +400,17 @@ export default function BuildView() {
                 </AnimatePresence>
 
                 <div className="mt-5 grid grid-cols-[1fr_1.4fr_1fr] gap-2">
-                  <button onClick={() => go(-1)} className="rounded-xl border border-white/15 bg-white/5 py-3 text-sm font-medium transition active:scale-95">
+                  <button onClick={() => go(-1)} className="rounded-xl border border-white/15 bg-white/[0.06] py-3 text-sm font-medium text-white/80 transition hover:bg-white/10 active:scale-95">
                     Back
                   </button>
                   <button
                     onClick={runCheck}
                     disabled={check?.state === "checking"}
-                    className="rounded-xl bg-holo py-3 font-hud text-sm font-bold uppercase tracking-[0.2em] text-ink transition hover:brightness-110 active:scale-95 disabled:opacity-60"
+                    className="rounded-xl bg-gradient-to-b from-sky-300 to-sky-500 py-3 text-sm font-semibold text-ink shadow-[inset_0_1px_0_rgba(255,255,255,0.4),0_6px_20px_-6px_rgba(92,200,255,0.7)] transition hover:brightness-110 active:scale-95 disabled:opacity-60"
                   >
-                    {check?.state === "checking" ? "Checking" : "Check build"}
+                    {check?.state === "checking" ? "Checking…" : "Check build"}
                   </button>
-                  <button onClick={() => go(1)} className="rounded-xl border border-holo/40 bg-holo/10 py-3 text-sm font-medium text-holo transition active:scale-95">
+                  <button onClick={() => go(1)} className="rounded-xl border border-white/15 bg-white/[0.06] py-3 text-sm font-medium text-white transition hover:bg-white/10 active:scale-95">
                     Next
                   </button>
                 </div>
