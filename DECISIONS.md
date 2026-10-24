@@ -64,6 +64,12 @@ Format: **Decision** — why. *(date, PT)*
 - **PDF pages render in the browser with pdf.js.** *(Sat Oct 24, ~3 AM)*
 - **Library lives in the browser (IndexedDB) for now:** manual list, uploaded PDFs, reading progress, and extracted steps per page. Each device has its own library until we add shared storage (Azure Blob is the candidate). *(Sat Oct 24, ~3 AM)*
 - **Steps are extracted one page at a time, when you reach it** (`POST /api/extract`, ~3.5 s/page, cached), instead of reading the whole book upfront. Pages with no steps are skipped automatically. Unnumbered steps (common in IKEA) get reading-order numbers. *(Sat Oct 24, ~3 AM)*
+- **Faster manual opening** *(Sat Oct 24, ~12:30 PM)*:
+  - pdf.js loads only the byte ranges it needs (`disableAutoFetch`, 1 MB chunks) instead of the whole file; LEGO books are ~20 MB and a full download through the proxy took minutes or failed.
+  - The PDF starts loading the moment a card is tapped, before the build screen mounts.
+  - Pages are read ahead in parallel (current + 6 ahead, up to 6 Claude calls at once), so cover/intro pages don't delay step 1 and Next is usually instant.
+  - The page image shows (with a scan sweep) while Claude reads it.
+  - Measured on the live site, fresh device: step 1 ready in ~11–22 s (was 25–130 s); Next ~0.3–1.3 s. Remaining time is mostly lego.com's slow, variable PDF delivery (1 MB in 1–5 s).
 - **Build screen starts at the first page with steps** (or where you left off), shows the step's manual picture as a glowing "target" panel, the next part as a hologram, and a **Check build** button (also Space/Enter). A verified step auto-advances. *(Sat Oct 24, ~3 AM)*
 - **Voice out uses the browser's built-in speech for now** (prefers a British male voice), with a mute toggle. Cartesia replaces it later. *(Sat Oct 24, ~3 AM)*
 
