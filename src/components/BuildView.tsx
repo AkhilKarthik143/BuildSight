@@ -322,6 +322,20 @@ export default function BuildView() {
   }, [phase.kind, step, muted]);
   useEffect(() => stopSpeaking, []);
 
+  // Back to step 1: page 1 forward, skipping cover/intro pages as usual.
+  const restart = useCallback(
+    (ask = true) => {
+      if (!doc || (ask && !window.confirm("Start over from step 1?"))) return;
+      stopSpeaking();
+      direction.current = 1;
+      setSelection(null);
+      setSheetOpen(true);
+      turnTo(1);
+      setAttempt((n) => n + 1); // re-read even if we're already on page 1
+    },
+    [doc, turnTo],
+  );
+
   const go = useCallback(
     (delta: 1 | -1) => {
       if (phase.kind !== "ready" || !doc) return;
@@ -397,6 +411,19 @@ export default function BuildView() {
             {doc && page > 0 ? ` · Page ${page}/${doc.numPages}` : ""}
           </p>
         </div>
+        <div className="flex items-center gap-2">
+        <button
+          onClick={() => restart()}
+          disabled={!doc}
+          aria-label="Restart from step 1"
+          title="Restart from step 1"
+          className="hud-panel grid h-9 w-9 place-items-center rounded-xl text-white/85 transition hover:text-white disabled:opacity-40"
+        >
+          <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 12a9 9 0 1 0 3-6.7" />
+            <path d="M3 4v5h5" />
+          </svg>
+        </button>
         <button
           onClick={() => {
             setMuted((m) => !m);
@@ -407,6 +434,7 @@ export default function BuildView() {
         >
           {muted ? "Voice off" : "Voice on"}
         </button>
+        </div>
       </header>
 
       {/* reticle: shows while a check is running */}
@@ -598,7 +626,12 @@ export default function BuildView() {
               <div>
                 <p className="text-xs font-semibold text-emerald-300">Build complete</p>
                 <p className="mt-2 text-2xl font-semibold tracking-tight">That&apos;s the last step in this manual.</p>
-                <Link href="/" className="mt-4 inline-block rounded-xl bg-holo px-4 py-2.5 text-sm font-semibold text-ink">Back to hub</Link>
+                <div className="mt-4 flex gap-2">
+                  <button onClick={() => restart(false)} className="rounded-xl bg-holo px-4 py-2.5 text-sm font-semibold text-ink">
+                    Start over
+                  </button>
+                  <Link href="/" className="rounded-xl border border-white/15 px-4 py-2.5 text-sm">Back to hub</Link>
+                </div>
               </div>
             )}
 
