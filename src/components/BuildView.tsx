@@ -171,7 +171,7 @@ export default function BuildView() {
   const [previous, setPrevious] = useState<string | null>(null);
   const [check, setCheck] = useState<Check | null>(null);
   const [muted, setMuted] = useState(false);
-  const [showManual, setShowManual] = useState(true);
+  const [showManual, setShowManual] = useState(false); // true = blue "hologram" tint; default is the real colors
   // Phones get a swipeable step card: swipe down to see your build, up for full details.
   const isPhone = useIsPhone();
   const [sheetOpen, setSheetOpen] = useState(true);
@@ -537,7 +537,7 @@ export default function BuildView() {
                 <div className="scan-bar mt-3 h-1 rounded-full" />
                 {compact ? null : preview ? (
                   <div className="relative mt-3 overflow-hidden rounded-xl bg-ink/60">
-                    <img src={preview} alt="Manual page being read" className="holo-image max-h-56 w-full object-contain" />
+                    <img src={preview} alt="Manual page being read" className="max-h-56 w-full object-contain" />
                     <span className="hud-sweep pointer-events-none absolute inset-x-0 top-0 bg-gradient-to-b from-transparent via-sky-300/25 to-transparent" />
                   </div>
                 ) : (
