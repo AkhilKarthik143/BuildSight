@@ -1,7 +1,7 @@
-/* eslint-disable @next/next/no-img-element -- covers come from lego.com / ikea.com at arbitrary sizes */
 "use client";
 
 import { motion } from "motion/react";
+import ProductImage from "@/components/hud/ProductImage";
 import type { ManualSource } from "@/lib/manuals";
 
 const SOURCE_LABEL: Record<ManualSource, string> = { lego: "LEGO", ikea: "IKEA", upload: "PDF" };
@@ -38,12 +38,7 @@ export default function ManualCard({ source, title, subtitle, coverUrl, meta, pr
         className={`relative aspect-[4/3] w-full overflow-hidden ${coverUrl ? "bg-white" : "bg-gradient-to-b from-sky-400/10 to-transparent"}`}
       >
         {coverUrl ? (
-          <img
-            src={coverUrl}
-            alt=""
-            loading="lazy"
-            className={`absolute inset-0 h-full w-full object-contain transition duration-500 group-hover:scale-[1.04] ${source === "lego" ? "" : "p-5"}`}
-          />
+          <ProductImage src={coverUrl} sizes="(max-width: 640px) 100vw, 380px" className="group-hover:scale-[1.04]" />
         ) : (
           <div className="absolute inset-0 grid place-items-center">
             <svg viewBox="0 0 48 48" className="h-14 w-14 text-sky-300/70" fill="none" stroke="currentColor" strokeWidth="1.5">

@@ -55,6 +55,10 @@ Format: **Decision** — why. *(date, PT)*
 
 - **Home page is a hub, Jarvis-inspired HUD look** (dark navy, cyan glow, rotating rings, corner-bracket panels, Rajdhani + Geist Mono). Inspired by the style only; no Marvel names, logos or assets. *(Sat Oct 24, ~3 AM)*
 - **Manual search: a 4–7 digit number searches LEGO by set number** (scraped from lego.com's building-instructions page: book names, sizes, PDFs, covers); **anything else searches IKEA** (IKEA's public product search, then each product page's assembly PDFs, keeping only PDFs named after the product, de-duplicated across color variants). *(Sat Oct 24, ~3 AM)*
+- **Hub organized into three tabs: LEGO, IKEA, My projects,** with category chips (LEGO themes; IKEA Tables & desks / Storage / Seating / Beds / Kids). *(Sat Oct 24, ~10 AM)*
+- **Browsable catalog: ~100 LEGO sets across 13 themes (newest 8 per theme) and ~37 IKEA products,** built by `scripts/build-catalog.mjs` into `src/data/catalog.json`. Every item is verified to have downloadable instructions; LEGO details (name, theme, age, pieces, year, product photo) come from lego.com's instructions page. The script caches what it found (`scripts/catalog-cache.json`) because lego.com throttles bursts. *(Sat Oct 24, ~10 AM)*
+- **Manuals load on tap, not upfront.** The catalog stores each manual's PDF link; the PDF itself is fetched when you open it. Sets with several books open a picker. Typing filters the catalog instantly; Search still looks up anything not listed (any LEGO set number or IKEA product). *(Sat Oct 24, ~10 AM)*
+- **My projects = your uploads and every manual you've opened,** with progress; a "Continue …" shortcut under the search bar resumes the latest build. *(Sat Oct 24, ~10 AM)*
 - **Upload any PDF** by button or drag-and-drop anywhere on the hub. *(Sat Oct 24, ~3 AM)*
 - **PDFs load through our own domain via Next.js rewrites** (`/manual-pdf/lego/…`, `/manual-pdf/ikea/…`) because browsers can't fetch them from lego.com/ikea.com directly; rewrites avoid Vercel's function size limit (LEGO books are ~20 MB). *(Sat Oct 24, ~3 AM)*
 - **PDF pages render in the browser with pdf.js.** *(Sat Oct 24, ~3 AM)*

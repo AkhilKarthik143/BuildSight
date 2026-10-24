@@ -11,6 +11,13 @@ const nextConfig: NextConfig = {
       },
     },
   },
+  // Product photos are resized and cached by Next's image optimizer (LEGO's CDN ignores size params).
+  images: {
+    remotePatterns: [
+      { protocol: "https", hostname: "www.lego.com", pathname: "/cdn/product-assets/**", search: "" },
+      { protocol: "https", hostname: "www.ikea.com", pathname: "/us/en/images/products/**", search: "" },
+    ],
+  },
   // Manual PDFs live on lego.com / ikea.com, which browsers can't fetch directly (CORS).
   // These rewrites serve them from our own domain without going through a function.
   async rewrites() {
