@@ -10,6 +10,7 @@ import type { PDFDocumentProxy } from "pdfjs-dist";
 import type { CheckResult } from "@/app/api/check/route";
 import type { ExtractedStep } from "@/app/api/extract/route";
 import CameraFeed, { type CameraHandle } from "@/components/CameraFeed";
+import VoicePanel from "@/components/VoicePanel";
 import { getManual, getPageSteps, saveManual, savePageSteps, type Manual } from "@/lib/manuals";
 import { openManualPdf, renderPage } from "@/lib/pdf";
 import { speak, stopSpeaking } from "@/lib/speech";
@@ -319,6 +320,11 @@ export default function BuildView() {
           </motion.aside>
         )}
       </AnimatePresence>
+
+      {/* voice: talk to BuildSight (top-left on phones, bottom-right on desktop) */}
+      <div className="absolute left-3 right-[10.5rem] top-20 z-20 sm:left-auto sm:right-6 sm:top-auto sm:bottom-6 sm:w-80">
+        <VoicePanel />
+      </div>
 
       {/* bottom: hologram + step card */}
       <div className="absolute inset-x-0 bottom-0 z-10 flex flex-col gap-3 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:bottom-6 sm:left-6 sm:right-auto sm:w-[440px] sm:p-0">

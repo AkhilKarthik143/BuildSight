@@ -28,7 +28,7 @@ Format: **Decision** — why. *(date, PT)*
 - **Demo setup: phone as overhead camera, laptop as the big screen,** paired with a room code or QR. *(Sat Oct 24, ~1:15 AM)*
 - **Stack:** Next.js 16 + React 19 + TypeScript + Tailwind on Vercel; three.js via react-three-fiber for 3D; Motion for animation. *(Sat Oct 24, ~1:30 AM)*
 - **Phone ↔ laptop real-time link: Azure Web PubSub** (Vercel functions can't hold a live socket; also keeps Microsoft in the build). *Not built yet.* *(Sat Oct 24, ~1:15 AM)*
-- **Speech to text: Azure AI Speech; voice out: Cartesia; telemetry: Azure Application Insights.** *Not built yet; keys pending.* *(Sat Oct 24, ~1:15 AM)*
+- **Speech to text: Azure AI Speech; voice out: Cartesia; telemetry: Azure Application Insights.** *Keys in; speech to text built (see Voice).* *(Sat Oct 24, ~1:15 AM)*
 
 ## AI
 
@@ -41,6 +41,12 @@ Format: **Decision** — why. *(date, PT)*
 - **Test manual: LEGO Creator 31163** (official PDF from lego.com, book 1, 100 pages, 1–2 steps per page with parts boxes). *(Sat Oct 24, ~1:40 AM)*
 - **Stand-in test result: 10/10** (5 step pairs × finished / not yet), ~3 s per check, using manual pictures as fake camera frames. Without a test-mode note, Claude refused to call a drawing "finished" and asked for a real photo, which is the behavior we want live. **Real-photo test still needed.** *(Sat Oct 24, ~1:50 AM)*
 - **Checks fire when the scene goes still** (hands out of frame ~1.5 s), detected in the browser, rather than sending every frame. *(Sat Oct 24, ~1 AM)*
+
+## Voice
+
+- **The voice loop goes into BuildSight** (not a separate FixSight app): listen with Azure, think with Claude, speak with Cartesia, on the build screen. *(Sat Oct 24, ~1 PM)*
+- **Speech to text: Azure AI Speech in the browser** (`microsoft-cognitiveservices-speech-sdk` 1.53). `GET /api/speech-token` trades the key for a 10-minute token (reused for 9 min), so the key never reaches the browser. The connection is opened when the build screen loads, so the first press starts fast. *(Sat Oct 24, ~1 PM)*
+- **Push-to-talk first: hold the mic button or hold M** (Space is already Check build). Words show while you speak; releasing sends the sentence. Hands-free mode comes after the full loop works. *(Sat Oct 24, ~1 PM)*
 
 ## Hologram / interactive UI
 
