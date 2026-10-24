@@ -28,7 +28,9 @@ export function openManualPdf(m: Manual): Promise<PDFDocumentProxy> {
         return getDocument({ data: new Uint8Array(bytes.slice(0)) }).promise;
       }
       if (!m.pdfPath) throw new Error("Manual has no PDF link.");
-      return getDocument({ url: m.pdfPath }).promise;
+      // Fetch only the byte ranges the pages we render need (LEGO books are ~20 MB),
+      // instead of streaming the whole file before page 1 can show.
+      return getDocument({ url: m.pdfPath, disableAutoFetch: true, disableStream: true, rangeChunkSize: 1024 * 1024 }).promise;
     })();
     doc.catch(() => open.delete(m.id));
     open.set(m.id, doc);

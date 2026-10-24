@@ -35,7 +35,13 @@ export default function BookPicker({ item, onPick, onClose }: { item: CatalogIte
           <div>
             <p className="text-xs font-medium text-sky-300">{item.source === "lego" ? `LEGO ${item.set}` : `IKEA ${item.itemNo}`}</p>
             <h2 className="mt-0.5 text-lg font-semibold tracking-tight">{item.name}</h2>
-            <p className="text-sm text-white/50">Which manual are you building from?</p>
+            <p className="text-sm text-white/50">
+              {item.source === "lego" && item.category === "Creator"
+                ? "This is a 3-in-1 set: each book builds a different model from the same bricks. Pick one."
+                : item.source === "lego"
+                  ? "This set's instructions come in several books. Start with Book 1."
+                  : "This product's assembly comes in several manuals. Start with Part 1."}
+            </p>
           </div>
           <button onClick={onClose} aria-label="Close" className="rounded-lg px-2 py-1 text-white/50 transition hover:bg-white/10 hover:text-white">
             ✕

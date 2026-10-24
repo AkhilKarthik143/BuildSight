@@ -36,15 +36,55 @@ async function crop(pageImage: string, box: ExtractedStep["box"]): Promise<strin
   return canvas.toDataURL("image/jpeg", 0.85);
 }
 
-async function extractSteps(manualId: string, doc: PDFDocumentProxy, page: number) {
-  const image = await renderPage(doc, page);
-  const cached = await getPageSteps<ExtractedStep>(manualId, page);
-  if (cached) return { image, steps: cached };
-  const res = await fetch("/api/extract", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ page: image }) });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error ?? "Couldn't read that page.");
-  await savePageSteps(manualId, page, data.steps);
-  return { image, steps: data.steps as ExtractedStep[] };
+// How many pages ahead to read in the background, and how many Claude calls may run at once.
+const LOOKAHEAD = 5;
+const MAX_PARALLEL = 3;
+
+// Runs at most `n` tasks at a time; extra ones wait in line.
+function limiter(n: number) {
+  let running = 0;
+  const queue: (() => void)[] = [];
+  return async <T,>(task: () => Promise<T>): Promise<T> => {
+    if (running >= n) await new Promise<void>((r) => queue.push(r));
+    running++;
+    try {
+      return await task();
+    } finally {
+      running--;
+      queue.shift()?.();
+    }
+  };
+}
+
+type PageJob = { image: Promise<string>; steps: Promise<ExtractedStep[]> };
+
+// Renders and reads pages, each at most once: shared by the current page and the read-ahead.
+function pageReader(manualId: string, doc: PDFDocumentProxy) {
+  const jobs = new Map<number, PageJob>();
+  const limit = limiter(MAX_PARALLEL);
+  return (page: number): PageJob => {
+    const existing = jobs.get(page);
+    if (existing) return existing;
+    const image = renderPage(doc, page, 1200);
+    const steps = (async () => {
+      const cached = await getPageSteps<ExtractedStep>(manualId, page);
+      if (cached) return cached;
+      const pageImage = await image;
+      const data = await limit(async () => {
+        const res = await fetch("/api/extract", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ page: pageImage }) });
+        const body = await res.json();
+        if (!res.ok) throw new Error(body.error ?? "Couldn't read that page.");
+        return body;
+      });
+      await savePageSteps(manualId, page, data.steps);
+      return data.steps as ExtractedStep[];
+    })();
+    const job = { image, steps };
+    // A failed page can be retried.
+    Promise.all([image, steps]).catch(() => jobs.delete(page));
+    jobs.set(page, job);
+    return job;
+  };
 }
 
 export default function BuildView() {
@@ -65,6 +105,7 @@ export default function BuildView() {
   const [muted, setMuted] = useState(false);
   const [showManual, setShowManual] = useState(true);
   const [attempt, setAttempt] = useState(0); // bumped by Retry to re-read the page
+  const [preview, setPreview] = useState<string | null>(null); // page image shown while Claude reads it
 
   // Every page change shows the loading card first.
   const turnTo = useCallback((p: number) => {
@@ -100,12 +141,17 @@ export default function BuildView() {
     };
   }, [id, turnTo]);
 
-  // 2. read the current page; skip pages with no steps in the direction of travel
+  const reader = useMemo(() => (doc && manual ? pageReader(manual.id, doc) : null), [doc, manual?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 2. read the current page (and the next few in the background); skip pages with no steps
   useEffect(() => {
-    if (!doc || !manual || page < 1) return;
+    if (!reader || !doc || !manual || page < 1) return;
     let cancelled = false;
-    extractSteps(manual.id, doc, page)
-      .then(({ image, steps: found }) => {
+    for (let k = 1; k <= LOOKAHEAD && page + k <= doc.numPages; k++) reader(page + k);
+    const job = reader(page);
+    job.image.then((img) => !cancelled && setPreview(img)).catch(() => {});
+    Promise.all([job.image, job.steps])
+      .then(([image, found]) => {
         if (cancelled) return;
         if (found.length === 0) {
           const next = page + direction.current;
@@ -126,7 +172,7 @@ export default function BuildView() {
     };
     // manual is saved as a side effect; re-running on its change would loop
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [doc, page, attempt]);
+  }, [reader, page, attempt]);
 
   // 3. cut out this step's target picture (and the one before it) for display and checking
   useEffect(() => {
@@ -296,7 +342,14 @@ export default function BuildView() {
               <div>
                 <p className="text-xs font-semibold text-sky-300">{phase.label}</p>
                 <div className="scan-bar mt-3 h-1 rounded-full" />
-                <p className="mt-3 text-sm text-white/50">Reading the instructions so I can walk you through them.</p>
+                {preview ? (
+                  <div className="relative mt-3 overflow-hidden rounded-xl bg-ink/60">
+                    <img src={preview} alt="Manual page being read" className="holo-image max-h-56 w-full object-contain" />
+                    <span className="hud-sweep pointer-events-none absolute inset-x-0 top-0 bg-gradient-to-b from-transparent via-sky-300/25 to-transparent" />
+                  </div>
+                ) : (
+                  <p className="mt-3 text-sm text-white/50">Opening the manual…</p>
+                )}
               </div>
             )}
 

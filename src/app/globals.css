@@ -93,9 +93,19 @@ body {
   to { transform: translateX(250%); }
 }
 
+/* A band of light sweeping down a page being read */
+.hud-sweep {
+  height: 35%;
+  animation: hud-sweep 2.2s ease-in-out infinite;
+}
+@keyframes hud-sweep {
+  from { transform: translateY(-100%); }
+  to { transform: translateY(300%); }
+}
+
 .blink { animation: blink 1.4s steps(2, start) infinite; }
 @keyframes blink { to { visibility: hidden; } }
 
 @media (prefers-reduced-motion: reduce) {
-  .spin-slow, .spin-rev, .spin-fast, .scan-bar::after, .blink { animation: none; }
+  .spin-slow, .spin-rev, .spin-fast, .scan-bar::after, .blink, .hud-sweep { animation: none; }
 }
