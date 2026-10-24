@@ -9,6 +9,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import type { CheckResult } from "@/app/api/check/route";
 import type { ExtractedStep } from "@/app/api/extract/route";
+import type { Box, LocateResult } from "@/app/api/locate/route";
 import CameraFeed, { type CameraHandle } from "@/components/CameraFeed";
 import VoicePanel from "@/components/VoicePanel";
 import { getManual, getPageSteps, saveManual, savePageSteps, type Manual } from "@/lib/manuals";
@@ -21,11 +22,10 @@ type Phase = { kind: "loading"; label: string } | { kind: "ready" } | { kind: "e
 type Check = { state: "checking" } | { state: "result"; result: CheckResult; frame: string } | { state: "error"; message: string };
 
 // Cuts a step's picture out of the rendered page (box is 0–1 of the page), with a little padding.
-async function crop(pageImage: string, box: ExtractedStep["box"]): Promise<string> {
+async function crop(pageImage: string, box: ExtractedStep["box"], pad = 0.02): Promise<string> {
   const img = new Image();
   img.src = pageImage;
   await img.decode();
-  const pad = 0.02;
   const x = Math.max(0, box.x - pad) * img.width;
   const y = Math.max(0, box.y - pad) * img.height;
   const w = Math.min(1, box.w + 2 * pad) * img.width;
@@ -34,6 +34,36 @@ async function crop(pageImage: string, box: ExtractedStep["box"]): Promise<strin
   canvas.width = Math.min(w, img.width - x);
   canvas.height = Math.min(h, img.height - y);
   canvas.getContext("2d")?.drawImage(img, x, y, canvas.width, canvas.height, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL("image/jpeg", 0.85);
+}
+
+// Draws a light percentage grid on an image. Claude places boxes far more accurately with it.
+async function withGrid(src: string): Promise<string> {
+  const img = new Image();
+  img.src = src;
+  await img.decode();
+  const scale = Math.max(1, 700 / img.width); // small crops get upscaled so labels stay legible
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(img.width * scale);
+  canvas.height = Math.round(img.height * scale);
+  const g = canvas.getContext("2d")!;
+  g.drawImage(img, 0, 0, canvas.width, canvas.height);
+  g.strokeStyle = "rgba(255,0,150,0.55)";
+  g.fillStyle = "rgba(255,0,150,0.9)";
+  g.lineWidth = 1;
+  g.font = "11px sans-serif";
+  for (let i = 1; i < 10; i++) {
+    const x = (canvas.width * i) / 10;
+    const y = (canvas.height * i) / 10;
+    g.beginPath();
+    g.moveTo(x, 0);
+    g.lineTo(x, canvas.height);
+    g.moveTo(0, y);
+    g.lineTo(canvas.width, y);
+    g.stroke();
+    g.fillText(String(i * 10), x + 2, 11);
+    g.fillText(String(i * 10), 2, y - 2);
+  }
   return canvas.toDataURL("image/jpeg", 0.85);
 }
 
@@ -102,6 +132,29 @@ function pageReader(manualId: string, doc: PDFDocumentProxy) {
   };
 }
 
+// Glowing outline over the manual picture: cyan around the piece in the parts box, amber where it goes.
+function HighlightBox({ box, kind }: { box: Box; kind: "callout" | "placed" }) {
+  const pad = 0.015;
+  return (
+    <motion.span
+      aria-hidden
+      initial={{ opacity: 0, scale: 1.3 }}
+      animate={{ opacity: 1, scale: 1 }}
+      className={`pointer-events-none absolute rounded-md border-2 ${
+        kind === "callout" ? "border-sky-300 shadow-[0_0_14px_2px_rgba(92,200,255,0.8)]" : "border-dashed border-amber-300 shadow-[0_0_14px_2px_rgba(252,211,77,0.6)]"
+      }`}
+      style={{
+        left: `${Math.max(0, box.x - pad) * 100}%`,
+        top: `${Math.max(0, box.y - pad) * 100}%`,
+        width: `${Math.min(1, box.w + 2 * pad) * 100}%`,
+        height: `${Math.min(1, box.h + 2 * pad) * 100}%`,
+      }}
+    >
+      {kind === "callout" && <span className="absolute inset-0 animate-pulse rounded-md bg-sky-300/15" />}
+    </motion.span>
+  );
+}
+
 export default function BuildView() {
   const { id } = useParams<{ id: string }>();
   const camera = useRef<CameraHandle>(null);
@@ -123,6 +176,15 @@ export default function BuildView() {
   const isPhone = useIsPhone();
   const [sheetOpen, setSheetOpen] = useState(true);
   const compact = isPhone && !sheetOpen;
+
+  // Tapping a part chip highlights that piece in the manual picture (selection resets when the step changes).
+  const stepKey = `${page}-${stepIdx}`;
+  const [selection, setSelection] = useState<{ key: string; idx: number } | null>(null);
+  const selectedPart = selection?.key === stepKey ? selection.idx : null;
+  const located = useRef(new Map<string, Promise<LocateResult | null>>());
+  const [found, setFound] = useState<{ key: string; result: LocateResult | null; pieceImage: string | null } | null>(null);
+  const partKey = selectedPart == null ? null : `${stepKey}-${selectedPart}`;
+  const highlight = found && found.key === partKey ? found : null;
   const [attempt, setAttempt] = useState(0); // bumped by Retry to re-read the page
   const [preview, setPreview] = useState<string | null>(null); // page image shown while Claude reads it
 
@@ -134,7 +196,29 @@ export default function BuildView() {
   }, []);
 
   const step = steps[stepIdx] as ExtractedStep | undefined;
-  const part = step?.parts[0];
+  const part = step?.parts[selectedPart ?? 0];
+
+  function selectPart(i: number) {
+    if (!step || !target) return;
+    if (selectedPart === i) return setSelection(null);
+    setSelection({ key: stepKey, idx: i });
+    const key = `${stepKey}-${i}`;
+    let job = located.current.get(key);
+    if (!job) {
+      job = withGrid(target)
+        .then((image) =>
+          fetch("/api/locate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ image, part: step.parts[i].name }) }),
+        )
+        .then((r) => (r.ok ? (r.json() as Promise<LocateResult>) : null))
+        .catch(() => null);
+      located.current.set(key, job);
+    }
+    const image = target;
+    job.then(async (result) => {
+      const pieceImage = result?.callout ? await crop(image, result.callout, 0.03) : null;
+      setFound({ key, result, pieceImage });
+    });
+  }
 
   // 1. load the manual and its PDF
   useEffect(() => {
@@ -324,7 +408,7 @@ export default function BuildView() {
             initial={{ opacity: 0, x: 24 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 24 }}
-            className={`absolute right-3 top-20 z-10 transition-[width] duration-300 sm:right-6 sm:top-24 sm:w-72 ${compact ? "w-24" : "w-36"}`}
+            className={`absolute right-3 top-20 z-10 transition-[width] duration-300 sm:right-6 sm:top-24 sm:w-72 ${compact ? "w-24" : selectedPart != null ? "w-44" : "w-36"}`}
           >
             <button onClick={() => setShowManual((s) => !s)} className="hud-panel holo-glow block w-full overflow-hidden rounded-xl text-left">
               {!compact && (
@@ -335,6 +419,8 @@ export default function BuildView() {
               )}
               <div className="relative m-2 overflow-hidden rounded-lg bg-ink/60">
                 <img src={target} alt={`Manual picture for step ${step?.number}`} className={`w-full ${showManual ? "holo-image" : ""}`} />
+                {highlight?.result?.callout && <HighlightBox box={highlight.result.callout} kind="callout" />}
+                {highlight?.result?.placed && <HighlightBox box={highlight.result.placed} kind="placed" />}
               </div>
             </button>
           </motion.aside>
@@ -342,7 +428,7 @@ export default function BuildView() {
       </AnimatePresence>
 
       {/* voice: talk to BuildSight (top-left on phones, bottom-right on desktop) */}
-      <div className="absolute left-3 right-[10.5rem] top-20 z-20 sm:left-auto sm:right-6 sm:top-auto sm:bottom-6 sm:w-80">
+      <div className={`absolute left-3 ${selectedPart != null && !compact ? "right-[12rem]" : "right-[10.5rem]"} top-20 z-20 sm:left-auto sm:right-6 sm:top-auto sm:bottom-6 sm:w-80`}>
         <VoicePanel
           getFrame={() => camera.current?.capture() ?? null}
           muted={muted}
@@ -357,9 +443,37 @@ export default function BuildView() {
       {/* bottom: hologram + step card */}
       <div className="absolute inset-x-0 bottom-0 z-10 flex flex-col gap-3 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:bottom-6 sm:left-6 sm:right-auto sm:w-[440px] sm:p-0">
         {phase.kind === "ready" && part && !compact && (
-          <div className="relative mx-auto h-36 w-36 sm:mx-0 sm:h-48 sm:w-48">
-            <Hologram part={part} />
-            <span className="absolute -bottom-3 left-1/2 -translate-x-1/2 whitespace-nowrap text-[11px] font-medium text-sky-200/80">Next part</span>
+          <div className="flex items-end justify-center gap-3 sm:justify-start">
+            <AnimatePresence>
+              {selectedPart != null && (
+                <motion.div
+                  key={partKey}
+                  initial={{ opacity: 0, scale: 0.9, x: -8 }}
+                  animate={{ opacity: 1, scale: 1, x: 0 }}
+                  exit={{ opacity: 0, scale: 0.9 }}
+                  className="mb-2 flex min-w-0 items-center gap-3 rounded-2xl border border-sky-300/30 bg-ink/80 p-2 pr-4 shadow-[0_0_30px_-8px_rgba(92,200,255,0.7)] backdrop-blur"
+                >
+                  <div className="grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-xl bg-white">
+                    {highlight?.pieceImage ? (
+                      <img src={highlight.pieceImage} alt="" className="max-h-full max-w-full object-contain" />
+                    ) : (
+                      <span className="scan-bar block h-1 w-10 rounded-full" />
+                    )}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-semibold text-sky-300">{highlight ? (highlight.result ? "This piece" : "Couldn't find it") : "Finding it…"}</p>
+                    <p className="max-w-40 truncate text-sm font-medium">{step?.parts[selectedPart].name}</p>
+                    {highlight?.result?.placed && <p className="text-[11px] text-amber-200/90">Goes in the amber box</p>}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+            <div className={`relative shrink-0 ${selectedPart != null ? "h-28 w-28 sm:h-40 sm:w-40" : "h-36 w-36 sm:h-48 sm:w-48"}`}>
+              <Hologram part={part} />
+              <span className="absolute -bottom-3 left-1/2 -translate-x-1/2 whitespace-nowrap text-[11px] font-medium text-sky-200/80">
+                {selectedPart != null ? "Shape" : "Next part"}
+              </span>
+            </div>
           </div>
         )}
 
@@ -474,10 +588,18 @@ export default function BuildView() {
                 {step.parts.length > 0 && (
                   <ul className="mt-3 flex flex-wrap gap-2">
                     {step.parts.map((p, i) => (
-                      <li key={`${p.name}-${i}`} className="flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-sm">
-                        <span className="h-3 w-3 rounded-sm ring-1 ring-white/20" style={{ background: p.color }} />
-                        {p.name}
-                        <span className="text-white/50">×{p.qty}</span>
+                      <li key={`${p.name}-${i}`}>
+                        <button
+                          onClick={() => selectPart(i)}
+                          aria-pressed={selectedPart === i}
+                          className={`flex items-center gap-2 rounded-full border px-3 py-1 text-sm transition active:scale-95 ${
+                            selectedPart === i ? "border-sky-300/70 bg-sky-300/15 shadow-[0_0_16px_-4px_rgba(92,200,255,0.8)]" : "border-white/15 bg-white/5 hover:border-white/30"
+                          }`}
+                        >
+                          <span className="h-3 w-3 rounded-sm ring-1 ring-white/20" style={{ background: p.color }} />
+                          {p.name}
+                          <span className="text-white/50">×{p.qty}</span>
+                        </button>
                       </li>
                     ))}
                   </ul>
