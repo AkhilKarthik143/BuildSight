@@ -30,13 +30,17 @@ export default function ManualCard({ source, title, subtitle, coverUrl, meta, pr
       transition={{ delay: index * 0.05, type: "spring", stiffness: 240, damping: 26 }}
       className="hud-panel group flex flex-col overflow-hidden rounded-xl"
     >
-      <button onClick={onAction} disabled={busy} className="relative aspect-[4/3] w-full overflow-hidden bg-[radial-gradient(circle_at_50%_60%,rgba(79,195,255,0.18),transparent_70%)] text-left">
+      <button
+        onClick={onAction}
+        disabled={busy}
+        className={`relative aspect-[4/3] w-full overflow-hidden text-left ${coverUrl ? "bg-white" : "bg-[radial-gradient(circle_at_50%_60%,rgba(79,195,255,0.18),transparent_70%)]"}`}
+      >
         {coverUrl ? (
           <img
             src={coverUrl}
             alt=""
             loading="lazy"
-            className="holo-image absolute inset-0 m-auto max-h-[85%] max-w-[85%] object-contain transition duration-500 group-hover:scale-105 group-hover:[filter:none] group-hover:[mix-blend-mode:normal] group-hover:opacity-100"
+            className={`absolute inset-0 h-full w-full transition duration-500 group-hover:scale-105 ${source === "lego" ? "object-contain" : "object-contain p-4"}`}
           />
         ) : (
           <div className="absolute inset-0 grid place-items-center">
@@ -46,7 +50,7 @@ export default function ManualCard({ source, title, subtitle, coverUrl, meta, pr
             </svg>
           </div>
         )}
-        <span className="absolute left-3 top-3 rounded-sm border border-holo/40 bg-ink/70 px-1.5 py-0.5 font-mono text-[10px] tracking-[0.2em] text-holo">
+        <span className="absolute left-3 top-3 rounded-sm bg-black/75 px-1.5 py-0.5 font-mono text-[10px] tracking-[0.2em] text-white">
           {SOURCE_LABEL[source]}
         </span>
         {busy && <span className="scan-bar absolute inset-x-0 bottom-0 h-1" />}

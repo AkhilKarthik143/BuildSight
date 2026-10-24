@@ -207,7 +207,6 @@ export default function BuildView() {
   return (
     <main className="relative h-dvh w-full overflow-hidden bg-ink text-white">
       <CameraFeed ref={camera} />
-      <div className="hud-scanlines pointer-events-none absolute inset-0" />
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-ink/70 via-transparent to-ink/80" />
 
       {/* top bar */}

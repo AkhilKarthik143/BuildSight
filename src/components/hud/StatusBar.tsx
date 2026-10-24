@@ -26,12 +26,6 @@ export default function StatusBar({ right }: { right?: React.ReactNode }) {
         <span className="font-hud text-lg font-semibold uppercase tracking-[0.35em] holo-text">BuildSight</span>
       </div>
 
-      <div className="hidden items-center gap-5 font-mono text-[10px] uppercase tracking-[0.2em] text-holo/70 md:flex">
-        <span className="flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />Vision online</span>
-        <span className="flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />Manuals online</span>
-        <span className="flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-amber-400 blink" />Voice standby</span>
-      </div>
-
       <div className="flex items-center gap-4">
         {right}
         <span className="font-mono text-xs tabular-nums text-holo/80">

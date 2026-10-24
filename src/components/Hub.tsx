@@ -97,25 +97,15 @@ export default function Hub() {
 
       <main className="relative z-10 mx-auto flex w-full max-w-6xl flex-col px-5 pb-24 sm:px-8">
         {/* hero + command console */}
-        <section className="flex flex-col items-center pt-14 text-center sm:pt-24">
-          <motion.p
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="font-mono text-[11px] uppercase tracking-[0.4em] text-holo/70"
-          >
-            Build assistant ready
-          </motion.p>
+        <section className="flex flex-col items-center pt-16 text-center sm:pt-28">
           <motion.h1
             initial={{ opacity: 0, y: 12, filter: "blur(8px)" }}
             animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-            transition={{ delay: 0.1, duration: 0.6 }}
-            className="mt-3 font-hud text-4xl font-semibold uppercase tracking-[0.08em] holo-text sm:text-6xl"
+            transition={{ duration: 0.6 }}
+            className="font-hud text-4xl font-semibold tracking-wide text-white sm:text-5xl"
           >
             What are we building?
           </motion.h1>
-          <p className="mt-3 max-w-xl text-sm text-white/60 sm:text-base">
-            Enter a LEGO set number or an IKEA product, or drop in any PDF manual. I&apos;ll read it and walk you through every step.
-          </p>
 
           <motion.form
             initial={{ opacity: 0, y: 16 }}
@@ -155,7 +145,7 @@ export default function Hub() {
               disabled={searching}
               className="shrink-0 rounded-xl bg-holo px-5 py-3 font-hud text-sm font-bold uppercase tracking-[0.2em] text-ink transition hover:brightness-110 active:scale-95 disabled:opacity-60"
             >
-              {searching ? "Scanning" : "Search"}
+              {searching ? "Searching" : "Search"}
             </button>
           </motion.form>
 
@@ -190,7 +180,7 @@ export default function Hub() {
               className="mt-14"
             >
               <SectionTitle
-                label={searching ? "Scanning databases" : error ? "Search error" : `Results for “${searched}”`}
+                label={searching ? "Searching" : error ? "Search error" : `Results for “${searched}”`}
                 count={searching || error ? undefined : results.length}
               />
               {searching && <div className="scan-bar mt-4 h-0.5 w-full rounded-full" />}
@@ -225,8 +215,8 @@ export default function Hub() {
           <SectionTitle label="Your manuals" count={library?.length} />
           {library && library.length === 0 && (
             <div className="hud-panel mt-5 rounded-xl p-8 text-center">
-              <p className="font-hud text-lg uppercase tracking-widest text-holo/80">No manuals loaded</p>
-              <p className="mt-1 text-sm text-white/50">Search above or drop a PDF anywhere on this page.</p>
+              <p className="font-hud text-lg font-semibold text-white/80">No manuals yet</p>
+              <p className="mt-1 text-sm text-white/50">Search a LEGO set number or IKEA product, or drop a PDF anywhere on this page.</p>
             </div>
           )}
           <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -278,7 +268,7 @@ function SectionTitle({ label, count }: { label: string; count?: number }) {
     <div className="flex items-center gap-3">
       <span className="h-px w-6 bg-holo" />
       <h2 className="font-hud text-sm font-semibold uppercase tracking-[0.3em] text-holo">{label}</h2>
-      {count != null && <span className="font-mono text-xs text-white/40">[{String(count).padStart(2, "0")}]</span>}
+      {count != null && count > 0 && <span className="text-xs text-white/40">{count}</span>}
       <span className="h-px flex-1 bg-gradient-to-r from-holo/40 to-transparent" />
     </div>
   );
