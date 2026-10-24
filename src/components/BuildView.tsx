@@ -5,7 +5,7 @@ import { AnimatePresence, motion } from "motion/react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import type { CheckResult } from "@/app/api/check/route";
 import type { ExtractedStep } from "@/app/api/extract/route";
@@ -35,6 +35,20 @@ async function crop(pageImage: string, box: ExtractedStep["box"]): Promise<strin
   canvas.height = Math.min(h, img.height - y);
   canvas.getContext("2d")?.drawImage(img, x, y, canvas.width, canvas.height, 0, 0, canvas.width, canvas.height);
   return canvas.toDataURL("image/jpeg", 0.85);
+}
+
+// True on phone-width screens (Tailwind's `sm` breakpoint is 640px).
+const PHONE_QUERY = "(max-width: 639px)";
+function useIsPhone() {
+  return useSyncExternalStore(
+    (onChange) => {
+      const mq = window.matchMedia(PHONE_QUERY);
+      mq.addEventListener("change", onChange);
+      return () => mq.removeEventListener("change", onChange);
+    },
+    () => window.matchMedia(PHONE_QUERY).matches,
+    () => false,
+  );
 }
 
 // How many pages ahead to read in the background, and how many Claude calls may run at once.
@@ -105,6 +119,10 @@ export default function BuildView() {
   const [check, setCheck] = useState<Check | null>(null);
   const [muted, setMuted] = useState(false);
   const [showManual, setShowManual] = useState(true);
+  // Phones get a swipeable step card: swipe down to see your build, up for full details.
+  const isPhone = useIsPhone();
+  const [sheetOpen, setSheetOpen] = useState(true);
+  const compact = isPhone && !sheetOpen;
   const [attempt, setAttempt] = useState(0); // bumped by Retry to re-read the page
   const [preview, setPreview] = useState<string | null>(null); // page image shown while Claude reads it
 
@@ -306,13 +324,15 @@ export default function BuildView() {
             initial={{ opacity: 0, x: 24 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 24 }}
-            className="absolute right-3 top-20 z-10 w-36 sm:right-6 sm:top-24 sm:w-72"
+            className={`absolute right-3 top-20 z-10 transition-[width] duration-300 sm:right-6 sm:top-24 sm:w-72 ${compact ? "w-24" : "w-36"}`}
           >
             <button onClick={() => setShowManual((s) => !s)} className="hud-panel holo-glow block w-full overflow-hidden rounded-xl text-left">
-              <div className="flex items-center justify-between px-3 pt-2">
-                <span className="text-[10px] font-semibold text-white/70 sm:text-[11px]">Step {step?.number} · manual</span>
-                <span className="text-[10px] text-white/40">{showManual ? "Tap for color" : "Tap for glow"}</span>
-              </div>
+              {!compact && (
+                <div className="flex items-center justify-between px-3 pt-2">
+                  <span className="text-[10px] font-semibold text-white/70 sm:text-[11px]">Step {step?.number} · manual</span>
+                  <span className="text-[10px] text-white/40">{showManual ? "Tap for color" : "Tap for glow"}</span>
+                </div>
+              )}
               <div className="relative m-2 overflow-hidden rounded-lg bg-ink/60">
                 <img src={target} alt={`Manual picture for step ${step?.number}`} className={`w-full ${showManual ? "holo-image" : ""}`} />
               </div>
@@ -323,12 +343,19 @@ export default function BuildView() {
 
       {/* voice: talk to BuildSight (top-left on phones, bottom-right on desktop) */}
       <div className="absolute left-3 right-[10.5rem] top-20 z-20 sm:left-auto sm:right-6 sm:top-auto sm:bottom-6 sm:w-80">
-        <VoicePanel />
+        <VoicePanel
+          getFrame={() => camera.current?.capture() ?? null}
+          muted={muted}
+          context={{
+            manual: manual?.title,
+            step: step && { number: step.number, instruction: step.instruction, parts: step.parts.map((p) => `${p.qty}x ${p.name}`), watchFor: step.watchFor },
+          }}
+        />
       </div>
 
       {/* bottom: hologram + step card */}
       <div className="absolute inset-x-0 bottom-0 z-10 flex flex-col gap-3 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:bottom-6 sm:left-6 sm:right-auto sm:w-[440px] sm:p-0">
-        {phase.kind === "ready" && part && (
+        {phase.kind === "ready" && part && !compact && (
           <div className="relative mx-auto h-36 w-36 sm:mx-0 sm:h-48 sm:w-48">
             <Hologram part={part} />
             <span className="absolute -bottom-3 left-1/2 -translate-x-1/2 whitespace-nowrap text-[11px] font-medium text-sky-200/80">Next part</span>
@@ -342,13 +369,58 @@ export default function BuildView() {
             animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
             exit={{ opacity: 0, y: -12, filter: "blur(6px)" }}
             transition={{ type: "spring", stiffness: 260, damping: 26 }}
-            className="hud-panel holo-glow rounded-3xl p-5"
+            // Phones: swipe down to collapse to a slim bar, swipe up to expand.
+            drag={isPhone ? "y" : false}
+            dragConstraints={{ top: 0, bottom: 0 }}
+            dragElastic={0.35}
+            dragSnapToOrigin
+            onDragEnd={(_, info) => {
+              if (info.offset.y > 50 || info.velocity.y > 400) setSheetOpen(false);
+              else if (info.offset.y < -50 || info.velocity.y < -400) setSheetOpen(true);
+            }}
+            className={`hud-panel holo-glow rounded-3xl touch-none sm:touch-auto ${compact ? "px-4 pb-3 pt-2" : "p-5 pt-3 sm:pt-5"}`}
           >
+            {isPhone && (
+              <button
+                onClick={() => setSheetOpen((o) => !o)}
+                aria-label={sheetOpen ? "Collapse step card" : "Expand step card"}
+                className="mx-auto mb-2 block h-5 w-16"
+              >
+                <span className="mx-auto block h-1.5 w-10 rounded-full bg-white/30" />
+              </button>
+            )}
+
+            {compact && phase.kind === "ready" && step && (
+              <div className="flex items-center gap-3">
+                <button onClick={() => setSheetOpen(true)} className="min-w-0 flex-1 text-left">
+                  <p className="text-[11px] font-semibold text-sky-300">
+                    Step {step.number}
+                    {check?.state === "result" && (
+                      <span className={verdict === "pass" ? "text-emerald-300" : verdict === "fix" ? "text-amber-300" : "text-white/50"}>
+                        {" "}· {{ pass: "Verified", fix: "Hold on", notyet: "Not done yet", unsure: "Need a better look" }[verdict ?? "unsure"]}
+                      </span>
+                    )}
+                  </p>
+                  <p className="truncate text-sm font-medium">{step.instruction}</p>
+                </button>
+                <button
+                  onClick={runCheck}
+                  disabled={check?.state === "checking"}
+                  className="shrink-0 rounded-xl bg-gradient-to-b from-sky-300 to-sky-500 px-4 py-2.5 text-sm font-semibold text-ink disabled:opacity-60"
+                >
+                  {check?.state === "checking" ? "…" : "Check"}
+                </button>
+                <button onClick={() => go(1)} aria-label="Next step" className="shrink-0 rounded-xl border border-white/15 bg-white/[0.06] px-3 py-2.5 text-sm">
+                  →
+                </button>
+              </div>
+            )}
+
             {phase.kind === "loading" && (
               <div>
                 <p className="text-xs font-semibold text-sky-300">{phase.label}</p>
                 <div className="scan-bar mt-3 h-1 rounded-full" />
-                {preview ? (
+                {compact ? null : preview ? (
                   <div className="relative mt-3 overflow-hidden rounded-xl bg-ink/60">
                     <img src={preview} alt="Manual page being read" className="holo-image max-h-56 w-full object-contain" />
                     <span className="hud-sweep pointer-events-none absolute inset-x-0 top-0 bg-gradient-to-b from-transparent via-sky-300/25 to-transparent" />
@@ -388,7 +460,7 @@ export default function BuildView() {
               </div>
             )}
 
-            {phase.kind === "ready" && step && (
+            {phase.kind === "ready" && step && !compact && (
               <>
                 <div className="flex items-baseline justify-between">
                   <p className="text-xs font-semibold text-sky-300">Step {step.number}</p>
