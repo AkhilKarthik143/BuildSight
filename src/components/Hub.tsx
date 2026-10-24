@@ -61,6 +61,8 @@ export default function Hub() {
   async function openResult(r: ManualResult) {
     setOpening(r.pdfPath);
     const m = await addFromResult(r);
+    // Start downloading the PDF now; the build screen picks up the same in-flight load.
+    import("@/lib/pdf").then(({ openManualPdf }) => openManualPdf(m).catch(() => {}));
     router.push(`/build/${m.id}`);
   }
 

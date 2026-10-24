@@ -37,8 +37,8 @@ async function crop(pageImage: string, box: ExtractedStep["box"]): Promise<strin
 }
 
 // How many pages ahead to read in the background, and how many Claude calls may run at once.
-const LOOKAHEAD = 5;
-const MAX_PARALLEL = 3;
+const LOOKAHEAD = 6;
+const MAX_PARALLEL = 6;
 
 // Runs at most `n` tasks at a time; extra ones wait in line.
 function limiter(n: number) {
