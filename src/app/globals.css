@@ -1,26 +1,45 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+html,
+body {
+  background: #000;
+  color: #fff;
+  overscroll-behavior: none;
+}
+
+/* Pulsing marker where the next piece goes */
+.target-ring {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 72px;
+  height: 72px;
+  margin: -36px 0 0 -36px;
+  border-radius: 9999px;
+  border: 2px solid rgba(79, 195, 255, 0.9);
+  box-shadow: 0 0 18px rgba(79, 195, 255, 0.6), inset 0 0 12px rgba(79, 195, 255, 0.4);
+  animation: target-pulse 1.6s ease-out infinite;
+}
+
+@keyframes target-pulse {
+  from {
+    transform: scale(0.35);
+    opacity: 1;
+  }
+  to {
+    transform: scale(1.4);
+    opacity: 0;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@media (prefers-reduced-motion: reduce) {
+  .target-ring {
+    animation: none;
+    opacity: 0.8;
+  }
 }
