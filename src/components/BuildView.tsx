@@ -20,7 +20,7 @@ import { getManual, getPageSteps, saveManual, savePageSteps, type Manual } from 
 import { openManualPdf, renderPage } from "@/lib/pdf";
 import { loadPrebuilt, type Prebuilt } from "@/lib/prebuilt";
 import { speak, speaker, stopSpeaking } from "@/lib/speech";
-import { changed, decide, MAX_TILES, whereAmI, type Tile } from "@/lib/whereAmI";
+import { AUTO_MIN_CONFIDENCE, changed, decide, MAX_TILES, whereAmI, type Tile } from "@/lib/whereAmI";
 
 
 type Phase = { kind: "loading"; label: string } | { kind: "ready" } | { kind: "error"; message: string } | { kind: "done" };
@@ -557,7 +557,7 @@ export default function BuildView() {
         }
         const complete = reader.count() >= doc.numPages;
         const result = await whereAmI({ frame, tiles, complete });
-        const place = decide(result, tiles, complete, step && { page, number: step.number });
+        const place = decide(result, tiles, complete, step && { page, number: step.number }, automatic ? AUTO_MIN_CONFIDENCE : 0);
         if (place.action === "fix" || place.action === "goto") {
           autoJump.current = true;
           say(place.say, place.action === "fix" ? place.problems : undefined);
