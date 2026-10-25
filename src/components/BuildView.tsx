@@ -995,19 +995,6 @@ export default function BuildView() {
                 </div>
                 <h1 className="mt-1 text-xl font-semibold leading-snug sm:text-2xl">{step.instruction}</h1>
 
-                {step.parts.length > 0 && (
-                  <ul className="mt-3 flex flex-wrap gap-2">
-                    {step.parts.map((p, i) => (
-                      <li key={`${p.name}-${i}`} className="flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-sm">
-                        {step.parts.length > 1 && <span className="rounded bg-sky-300 px-1 text-[9px] font-bold leading-[14px] text-ink">{i + 1}</span>}
-                        <span className="h-3 w-3 rounded-sm ring-1 ring-white/20" style={{ background: p.color }} />
-                        {p.name}
-                        <span className="text-white/50">×{p.qty}</span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-
                 {step.watchFor[0] && (
                   <p className="mt-3 flex gap-2 text-xs text-amber-200/90">
                     <span className="font-mono">⚠</span>
