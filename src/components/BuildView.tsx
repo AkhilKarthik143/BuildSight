@@ -15,6 +15,7 @@ import type { PartMark } from "@/components/HighlightBox";
 import CameraFeed, { type CameraHandle } from "@/components/CameraFeed";
 import PieceHologram from "@/components/PieceHologram";
 import { describePart, partLines } from "@/lib/parts";
+import type { AssistAction } from "@/lib/assistReply";
 import { cutOutPiece, type Cutout } from "@/lib/cutout";
 import ManualPanel from "@/components/ManualPanel";
 import VoicePanel from "@/components/VoicePanel";
@@ -266,6 +267,9 @@ export default function BuildView() {
   const compact = isPhone && !sheetOpen;
 
   const stepKey = `${page}-${stepIdx}`;
+  // "I'm stuck": smaller sub-steps from the voice assistant, shown as a checklist for this step only.
+  const [substeps, setSubsteps] = useState<{ key: string; items: string[]; done: boolean[] } | null>(null);
+  const activeSubs = substeps?.key === stepKey ? substeps : null;
   const check = forStep(checkState, stepKey);
   const setCheck = useCallback((c: Check | null) => setCheckState(c && { ...c, key: stepKey }), [stepKey]);
   const verdict = check?.state === "result" ? checkVerdict(check.result) : null;
@@ -818,6 +822,23 @@ export default function BuildView() {
     return () => clearTimeout(t);
   }, [notice, locating]);
 
+  // Actions from the voice assistant's reply ("go back", "take me to step 5", "I'm stuck").
+  const onAction = useCallback(
+    (a: AssistAction) => {
+      switch (a.action) {
+        case "next":
+          return go(1);
+        case "prev":
+          return go(-1);
+        case "goto":
+          return void goToStep(a.goto_step);
+        case "add_substeps":
+          return setSubsteps({ key: stepKey, items: a.substeps, done: a.substeps.map(() => false) });
+      }
+    },
+    [go, goToStep, stepKey],
+  );
+
   // Spoken commands from the voice panel; returns what to show in the transcript, or null to ask Claude instead.
   const onCommand = useCallback(
     (text: string): string | null => {
@@ -993,9 +1014,10 @@ export default function BuildView() {
           muted={muted}
           compact={compact}
           onCommand={onCommand}
+          onAction={onAction}
           context={{
             manual: manual?.title,
-            step: step && { number: step.sub ? `${step.number} (${step.sub.replace("/", " of ")})` : step.number, instruction: step.instruction, parts: step.parts.map((p) => `${p.qty}x ${p.name}`), watchFor: step.watchFor },
+            step: step && { number: step.sub ? `${step.number} (${step.sub.replace("/", " of ")})` : step.number, instruction: step.instruction, parts: step.parts.map((p) => `${p.qty}x ${describePart(p)}`), watchFor: step.watchFor },
           }}
         />
       </div>
@@ -1223,7 +1245,49 @@ export default function BuildView() {
                   {step.instruction}
                 </motion.h1>
 
-                {step.watchFor[0] && !roomForResult && (
+                {/* "I'm stuck": the step broken into smaller actions. Tap one to tick it off. */}
+                <AnimatePresence>
+                  {activeSubs && !roomForResult && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="mt-2 overflow-hidden rounded-xl border border-sky-300/25 bg-sky-300/[0.06] px-3 py-2"
+                    >
+                      <div className="flex items-center justify-between">
+                        <p className="text-[11px] font-semibold text-sky-300">Smaller steps</p>
+                        <button onClick={() => setSubsteps(null)} aria-label="Hide smaller steps" className="px-1 text-xs text-white/40 hover:text-white/80">
+                          ✕
+                        </button>
+                      </div>
+                      <ol className="mt-1 space-y-1">
+                        {activeSubs.items.map((text, i) => {
+                          const done = activeSubs.done[i];
+                          return (
+                            <li key={i}>
+                              <button
+                                onClick={() => setSubsteps((sub) => sub && { ...sub, done: sub.done.map((d, j) => (j === i ? !d : d)) })}
+                                aria-pressed={done}
+                                className="flex w-full items-start gap-2 text-left text-[13px] leading-snug"
+                              >
+                                <span
+                                  className={`mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-full border text-[9px] font-bold ${
+                                    done ? "border-emerald-300 bg-emerald-300/20 text-emerald-200" : "border-white/30 text-white/55"
+                                  }`}
+                                >
+                                  {done ? "✓" : i + 1}
+                                </span>
+                                <span className={done ? "text-white/40 line-through" : "text-white/85"}>{text}</span>
+                              </button>
+                            </li>
+                          );
+                        })}
+                      </ol>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
+                {step.watchFor[0] && !roomForResult && !(isPhone && activeSubs) && (
                   <p className="mt-2 flex gap-2 text-xs text-amber-200/90">
                     <span className="font-mono">⚠</span>
                     <span className="line-clamp-2">{step.watchFor[0]}</span>
