@@ -28,20 +28,33 @@ import { AUTO_MIN_CONFIDENCE, changed, decide, MAX_TILES, whereAmI, type Tile } 
 type Phase = { kind: "loading"; label: string } | { kind: "ready" } | { kind: "error"; message: string } | { kind: "done" };
 type Check = { state: "checking" } | { state: "result"; result: CheckResult; frame: string } | { state: "error"; message: string };
 
-// Cuts a step's picture out of the rendered page (box is 0–1 of the page), with a little padding.
-// Scales an image data URL down to `height` px tall (small thumbnails for the step strip).
-async function shrink(src: string, height: number): Promise<string> {
+// Every step picture on one page, cut out and scaled to THUMB_H px tall, decoding the page only once.
+// Shared by the step strip and "where am I?" (see thumbsFor), so each picture is cut once per session.
+const THUMB_H = 160;
+async function stepThumbs(pageImage: string, boxes: ExtractedStep["box"][], pad = 0.02): Promise<string[]> {
   const img = new Image();
-  img.src = src;
+  img.src = pageImage;
   await img.decode();
-  const scale = Math.min(1, height / img.height);
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.max(1, Math.round(img.width * scale));
-  canvas.height = Math.max(1, Math.round(img.height * scale));
-  canvas.getContext("2d")?.drawImage(img, 0, 0, canvas.width, canvas.height);
-  return canvas.toDataURL("image/jpeg", 0.75);
+  const out: string[] = [];
+  for (const box of boxes) {
+    const x = Math.max(0, box.x - pad) * img.width;
+    const y = Math.max(0, box.y - pad) * img.height;
+    const w = Math.min(Math.min(1, box.w + 2 * pad) * img.width, img.width - x);
+    const h = Math.min(Math.min(1, box.h + 2 * pad) * img.height, img.height - y);
+    const scale = Math.min(1, THUMB_H / h);
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(w * scale));
+    canvas.height = Math.max(1, Math.round(h * scale));
+    canvas.getContext("2d")?.drawImage(img, x, y, w, h, 0, 0, canvas.width, canvas.height);
+    out.push(canvas.toDataURL("image/jpeg", 0.8));
+  }
+  return out;
 }
 
+// Lets the phone draw a frame between chunks of picture work, so the screen never freezes.
+const breathe = () => new Promise((r) => setTimeout(r, 0));
+
+// Cuts a step's picture out of the rendered page (box is 0–1 of the page), with a little padding.
 async function crop(pageImage: string, box: ExtractedStep["box"], pad = 0.02): Promise<string> {
   const img = new Image();
   img.src = pageImage;
@@ -600,26 +613,35 @@ export default function BuildView() {
     () => (reader ? reader.pages().flatMap((pg) => pg.steps.map((st, idx) => ({ page: pg.page, idx, step: st, image: pg.image }))) : []),
     [reader, readCount], // eslint-disable-line react-hooks/exhaustive-deps -- re-list whenever more pages are read
   );
-  const thumbsMade = useRef(new Set<string>()); // which thumbnails are made or being made
+  // Step pictures, cut once per page and kept (the strip shows them, "where am I?" sends them to Claude).
+  const pageThumbs = useRef(new Map<number, { steps: ExtractedStep[]; job: Promise<string[]> }>());
+  const thumbsFor = useCallback((pg: { page: number; steps: ExtractedStep[]; image: () => Promise<string> }) => {
+    const have = pageThumbs.current.get(pg.page);
+    if (have && have.steps === pg.steps) return have.job;
+    const job = pg
+      .image()
+      .then((image) => stepThumbs(image, pg.steps.map((st) => st.box)))
+      .catch(() => pg.steps.map(() => ""));
+    pageThumbs.current.set(pg.page, { steps: pg.steps, job });
+    return job;
+  }, []);
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
   useEffect(() => {
+    if (!reader) return;
     let cancelled = false;
     (async () => {
-      for (const item of stripItems) {
-        const key = `${item.page}-${item.idx}`;
-        if (thumbsMade.current.has(key)) continue;
-        thumbsMade.current.add(key);
-        const url = await crop(await item.image(), item.step.box)
-          .then((c) => shrink(c, 120))
-          .catch(() => "");
-        setThumbs((t) => ({ ...t, [key]: url }));
+      for (const pg of reader.pages()) {
+        if (pg.steps.every((_, idx) => thumbs[`${pg.page}-${idx}`] !== undefined)) continue;
+        const urls = await thumbsFor(pg);
         if (cancelled) return;
+        setThumbs((t) => ({ ...t, ...Object.fromEntries(urls.map((u, idx) => [`${pg.page}-${idx}`, u])) }));
+        await breathe();
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [stripItems]);
+  }, [stripItems]); // eslint-disable-line react-hooks/exhaustive-deps -- runs when more pages are read; `thumbs` only skips finished pages
   const jumpToStep = useCallback(
     (toPage: number, idx: number) => {
       search.current++; // cancel any running "go to step" search
@@ -656,12 +678,13 @@ export default function BuildView() {
       setLocating(true);
       if (!automatic) setNotice({ text: "Finding your place…" });
       try {
+        // The same step pictures the strip shows: already cut, so this is nearly free after the first time.
         const tiles: Tile[] = [];
         for (const pg of pages) {
-          const image = await pg.image();
-          for (const s of pg.steps) {
+          const urls = await thumbsFor(pg);
+          for (const [idx, st] of pg.steps.entries()) {
             if (tiles.length >= MAX_TILES) break;
-            tiles.push({ tile: tiles.length + 1, page: pg.page, number: s.number, image: await crop(image, s.box) });
+            tiles.push({ tile: tiles.length + 1, page: pg.page, number: st.number, image: urls[idx] });
           }
         }
         const complete = reader.count() >= doc.numPages;
@@ -680,7 +703,7 @@ export default function BuildView() {
         setLocating(false);
       }
     },
-    [reader, doc, locating, muted, step, page, openTile],
+    [reader, doc, locating, muted, step, page, openTile, thumbsFor],
   );
 
   // A new step drops any check still running and a pending auto-advance (the old result hides itself: see `check`).

@@ -138,3 +138,10 @@ A failed step check now draws a numbered amber box on each wrong piece and lists
 - Boxes go on the exact JPEG that was checked, never the live video. The old phone layout cropped that photo with `object-cover`, which would misplace boxes, so `CheckErrorOverlay` shows the whole photo with a wrapper sized to the image: percentages of the wrapper are percentages of the photo. Tested on 4:3, 16:9 and portrait cameras.
 - A check result carries the step it ran on and is hidden on any other step. Answers from older checks are dropped, the auto-advance after a pass is canceled if the step changes, and automatic step detection pauses while a mistake is on screen. A mistake stays until Check again passes or the builder taps Close (Close never counts as fixed).
 - Model boxes are a pointer, not a measurement: the confidence number isn't calibrated, and box accuracy with real answers still needs a phone test.
+
+## Faster automatic step detection on phones
+Every automatic "where am I?" check used to cut all step pictures out of their pages again (up to 160) and redraw 8 contact sheets, in one long block. On a phone that froze the screen for seconds every ~20 s (measured at 4x CPU slowdown: 60 fps dropped to 27 fps, 2.8 s of blocked main thread per 5 s).
+- Step pictures are now cut once per page (one decode per page) at 160 px tall and shared by the step strip and "where am I?".
+- Contact sheets are kept and only redrawn when their tiles change.
+- The picture work yields between pages and before each JPEG encode, so frames keep coming.
+After: about 60 fps through the whole check, worst 5 s window 188 ms of blocked main thread.
