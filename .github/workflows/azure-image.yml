@@ -3,14 +3,14 @@
 # - Build: GitHub's runners build the image (Azure for Students doesn't allow cloud builds inside the registry).
 #   Secrets: ACR_LOGIN_SERVER, ACR_USERNAME, ACR_PASSWORD (the registry's login; no app keys).
 # - Deploy: signs in to Azure with OIDC as the managed identity `buildsight-github-deploy` (Contributor on
-#   calhacks-rg only; trusts only this repo's main and claude/azure-deploy branches). No password is stored:
+#   calhacks-rg only; trusts only this repo's main branch). No password is stored:
 #   AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID are identifiers.
 # App keys never pass through here: they're Container App secrets.
 name: Azure image
 
 on:
   push:
-    branches: [main, claude/azure-deploy]
+    branches: [main]
   workflow_dispatch:
 
 # One deploy at a time; a newer push waits for the running one instead of racing it.
