@@ -71,6 +71,11 @@ class Speaker {
   private active = false;
   private nextTime = 0;
   private cartesiaWorked = false; // once Cartesia has spoken, never fall back to the browser's different voice
+  // The browser voice is only for when Cartesia isn't available at all (no key, or it has never worked after
+  // several tries). A busy Cartesia (too many requests at once, e.g. quick replies in Practice Mode) is retried
+  // instead, so the app keeps one voice.
+  private cartesiaMissing = false;
+  private failures = 0;
   private wake: (() => void) | null = null; // wakes an idle reply loop so a stopped reply can finish
 
   get speaking() {
@@ -132,8 +137,9 @@ class Speaker {
             this.cartesiaWorked = true;
             this.setActive(true);
             await this.play(audio, gen);
-          } else if (!this.cartesiaWorked) {
+          } else if (!this.cartesiaWorked && (this.cartesiaMissing || ++this.failures >= 3)) {
             // Cartesia isn't working at all (e.g. no key): use the browser voice so there's still sound.
+            this.cartesiaMissing = true;
             this.setActive(true);
             await this.waitForQueuedAudio(gen);
             if (gen !== this.generation) return;
@@ -202,16 +208,21 @@ class Speaker {
 
   // Gets one sentence's audio stream from /api/tts, retrying briefly if Cartesia is busy. Null if it can't.
   private async fetchAudio(text: string, signal: AbortSignal): Promise<ReadableStream<Uint8Array> | null> {
-    for (let attempt = 0; attempt < 3; attempt++) {
+    // Busy (Cartesia allows only a few requests at once): back off for up to ~4.5 s; earlier replies finish fast.
+    for (let attempt = 0; attempt < 6; attempt++) {
       if (signal.aborted) return null;
       try {
         const r = await fetch("/api/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }), signal });
         if (r.ok && r.body) return r.body;
-        if (r.status === 503 || r.status === 400) return null; // not set up / bad input: retrying won't help
+        if (r.status === 503) {
+          this.cartesiaMissing = true; // no key on the server: retrying won't help
+          return null;
+        }
+        if (r.status === 400) return null; // bad input
       } catch {
         if (signal.aborted) return null;
       }
-      await new Promise((res) => setTimeout(res, 250 * (attempt + 1)));
+      await new Promise((res) => setTimeout(res, 300 * (attempt + 1)));
     }
     return null;
   }

@@ -211,3 +211,7 @@ Practice a build hands-on through the phone: live rear camera behind a transpare
 - **Entry points, small changes outside the practice folder.** The Parrot's book picker gets a "Practice in AR" button; BuildView's header gets an AR button for the Parrot manual only; the PC Build card "Install a GPU" became "Install RAM + GPU" and opens Practice Mode (an `href` on the card) instead of the toast.
 - **LDraw not used.** The procedural parts are measured against the spec by the test; LDraw would add a loader and per-part downloads for little visible gain at phone size.
 - **Not yet checked on a real phone:** gyro feel and frame rate. Phones get 1024 px shadow maps and 256 px contact shadows; pixel ratio is capped at 2.
+
+## One voice everywhere (Cartesia stays on when busy)
+Practice Mode sometimes spoke in the browser's built-in voice. Cartesia only accepts about three requests at once; quick replies (a correction, then "Nice, it clicks in" plus the next step) went over that, `/api/tts` returned 502, and the speaker took any failure before Cartesia had spoken once as "Cartesia isn't set up" and switched to the browser voice.
+- `src/lib/speech.ts`: a busy reply is retried with backoff (up to about 4.5 s) instead of falling back. The browser voice is used only when the server says Cartesia isn't set up (503), or Cartesia has failed three sentences in a row without ever working. Applies to the whole app, so every screen keeps the same voice.
