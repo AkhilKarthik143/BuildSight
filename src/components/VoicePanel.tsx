@@ -7,6 +7,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AssistRequest } from "@/app/api/assist/route";
+import { readTranscript, type AssistAction } from "@/lib/assistReply";
 import { Listener } from "@/lib/listen";
 import { speaker } from "@/lib/speech";
 
@@ -38,9 +39,11 @@ type Props = {
   // Spoken build commands ("next", "go to step 8"): returns a short confirmation if it handled the phrase
   // (then Claude isn't asked), or null to send it to Claude as a question.
   onCommand?: (text: string) => string | null;
+  // What Claude's reply asked the app to do: move steps, or show smaller sub-steps when they're stuck.
+  onAction?: (action: AssistAction) => void;
 };
 
-export default function VoicePanel({ getFrame, context, muted, compact, onCommand }: Props) {
+export default function VoicePanel({ getFrame, context, muted, compact, onCommand, onAction }: Props) {
   const [status, setStatus] = useState<VoiceStatus>("idle");
   const [lines, setLines] = useState<Line[]>([]);
   const [interim, setInterim] = useState("");
@@ -56,8 +59,8 @@ export default function VoicePanel({ getFrame, context, muted, compact, onComman
   const scroller = useRef<HTMLDivElement>(null);
   const linesRef = useRef<Line[]>([]);
   linesRef.current = lines;
-  const props = useRef({ getFrame, context, muted, onCommand });
-  props.current = { getFrame, context, muted, onCommand };
+  const props = useRef({ getFrame, context, muted, onCommand, onAction });
+  props.current = { getFrame, context, muted, onCommand, onAction };
   const asking = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -168,27 +171,45 @@ export default function VoicePanel({ getFrame, context, muted, compact, onComman
       });
 
     try {
-      const body: AssistRequest = { question, history, frame, ...context };
+      const body: AssistRequest = { question, history, frame, ...context, format: "json" };
       const res = await fetch("/api/assist", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: ctrl.signal });
       if (!res.ok || !res.body) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error ?? "Couldn't get an answer.");
       }
+      // The reply is JSON: the spoken text streams out of it (and into the voice) as it arrives; the action comes last.
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
+      const json = readTranscript();
       let reply = "";
       for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
-        const chunk = decoder.decode(value, { stream: true });
-        reply += chunk;
+        const text = json.feed(decoder.decode(value, { stream: true }));
+        if (!text) continue;
+        reply += text;
         setReply(reply);
-        voice?.push(chunk); // each finished sentence starts speaking right away
+        voice?.push(text); // each finished sentence starts speaking right away
       }
-      reply = reply.trim();
-      if (!reply) throw new Error("Got an empty answer. Try again.");
-      if (voice) voice.end().then(() => !ctrl.signal.aborted && finish());
-      else finish();
+      const { transcript, action } = json.finish();
+      if (!transcript && action.action === "none") throw new Error("Got an empty answer. Try again.");
+      setReply(transcript);
+      // Sub-steps show at once; step moves wait until the reply has been spoken, so the next step's
+      // announcement doesn't cut it off.
+      const act = () => {
+        if (!ctrl.signal.aborted && action.action !== "none") props.current.onAction?.(action);
+      };
+      if (action.action === "add_substeps") act();
+      if (voice)
+        voice.end().then(() => {
+          if (ctrl.signal.aborted) return;
+          if (action.action !== "add_substeps") act();
+          finish();
+        });
+      else {
+        if (action.action !== "add_substeps") act();
+        finish();
+      }
     } catch (e) {
       if (ctrl.signal.aborted) return;
       voice?.end();

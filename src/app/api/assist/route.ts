@@ -1,5 +1,7 @@
 // Voice assistant: answers the builder's spoken question, looking at the latest camera frame.
-// Streams plain text back so the browser can start speaking after the first sentence.
+// Streams the reply so the browser can start speaking after the first sentence.
+// Default: plain text. With `format: "json"`: one JSON object, transcript first, then an action the app carries out
+// ({"transcript", "action": none|next|prev|goto|add_substeps, "goto_step"?, "substeps"?}; see src/lib/assistReply.ts).
 
 import { ClaudeError, streamClaude, type Turn } from "@/lib/claude";
 
@@ -12,17 +14,34 @@ export type AssistRequest = {
   history?: { role: "user" | "assistant"; text: string }[];
   step?: { number: number | string; instruction: string; parts?: string[]; watchFor?: string[]; selectedPart?: string };
   manual?: string; // title of what they're building
+  format?: "text" | "json"; // "json": structured reply with an action (older clients leave it out and get plain text)
 };
 
 const SYSTEM_PROMPT = `You are BuildSight, an expert builder talking someone through a LEGO set or IKEA furniture build, hands-free.
 Your words are spoken aloud by a voice, so write for the ear:
 - Keep it short: one to three sentences, under 50 words unless asked for more.
+- One physical action per sentence. Short sentences.
+- Name the part ("the lime green 2x4 plate") instead of saying "it" or "that".
+- Never invent numbers: step numbers, counts and sizes only when they're in the context or clearly visible.
 - One step at a time. Give the next action, then stop. Don't list several steps at once.
 - Plain words. No markdown, lists, emoji, or symbols. Say numbers the way you'd say them.
 - If there is a safety risk (tipping furniture, wall anchors, power tools, sharp edges, heavy lifting, small parts near young children), say the warning first.
 - You may get a photo from their camera. Describe pieces by color, size and shape. If the photo is blurry, dark, or doesn't show what you need, say so and ask them to move closer or show a specific part. Don't guess.
 - Use the current step from the manual when it's given. If what you see doesn't match it, say what's off and how to fix it.
 - Be warm and calm, like a patient senior colleague.`;
+
+const JSON_RULES = `
+
+Reply with ONE JSON object and nothing else, with "transcript" first:
+{"transcript": "what you say aloud", "action": "none" | "next" | "prev" | "goto" | "add_substeps", "goto_step": 5, "substeps": ["..."]}
+- transcript: follows all the speaking rules above.
+- action "next" / "prev": they want to move on / go back a step. Transcript: a few words ("Moving on.").
+- action "goto" with goto_step: they asked for a specific step number. Only a number they said; never guess one.
+- action "add_substeps" with 2 to 6 substeps: whenever they say they're stuck, lost or confused, or ask for help
+  with this step ("I'm stuck", "I don't get it", "help", "break it down", "this is confusing"). Don't ask a question
+  first: break the current step into small physical actions right away, at most 12 words each, naming the parts.
+  Transcript: say the first one and that the smaller steps are on screen.
+- Otherwise "none". Leave out goto_step and substeps unless the action needs them.`;
 
 function context(req: AssistRequest): string {
   const lines: string[] = [];
@@ -59,7 +78,7 @@ export async function POST(request: Request) {
   // History must start with the user.
   while (turns.length && turns[0].role !== "user") turns.shift();
 
-  const chunks = streamClaude(SYSTEM_PROMPT, turns);
+  const chunks = streamClaude(body.format === "json" ? SYSTEM_PROMPT + JSON_RULES : SYSTEM_PROMPT, turns);
 
   // Wait for the first chunk so an early failure comes back as a clear error, not a broken stream.
   let first: IteratorResult<string>;
