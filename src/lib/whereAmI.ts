@@ -119,20 +119,20 @@ export function decide(
       action: "fix",
       target: t,
       problems: broken.map((x) => `Step ${x.t.number}: ${x.b.part} ${x.b.problem}. ${x.b.fix}`),
-      say: `${reached ? `You're up to step ${reached.number}, but s` : "S"}tep ${t.number} needs fixing: the ${b.part} is ${b.problem}. ${b.fix}${more}`,
+      say: `It seems ${reached ? `you're up to step ${reached.number}, but ` : ""}step ${t.number} needs fixing: the ${b.part} is ${b.problem}. ${b.fix}${more}`,
     };
   }
   const next = tiles.find((t) => t.tile > result.completed_tile);
   if (!next) {
     return complete
-      ? { action: "done", say: `Looks like you've finished ${reached ? `step ${reached.number}, ` : ""}the last step.` }
-      : { action: "unsure", say: `Looks like you've finished everything I've read so far.${still} Ask again in a minute.` };
+      ? { action: "done", say: `It seems you've finished ${reached ? `step ${reached.number}, ` : ""}the last step.` }
+      : { action: "unsure", say: `It seems you've finished everything I've read so far.${still} Ask again in a minute.` };
   }
   if (current && current.page === next.page && current.number === next.number) return { action: "stay", say: `You're on step ${next.number}.` };
   return {
     action: "goto",
     target: next,
-    say: result.completed_tile === 0 ? `Looks like nothing's built yet. Starting at step ${next.number}.` : `Looks like you're on step ${next.number}.`,
+    say: result.completed_tile === 0 ? `It seems nothing's built yet. Starting at step ${next.number}.` : `It seems you're on step ${next.number}. Going there now.`,
   };
 }
 
