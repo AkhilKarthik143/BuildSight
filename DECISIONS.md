@@ -181,3 +181,13 @@ A design review of the hub and the build screen found the accent spread over sev
 - Phones: the build header keeps "Page 5/68" visible (only the subtitle truncates), the voice status wraps to two lines instead of cutting off, the manual panel header reads "Step 1 · Zoom" on one line. Panel sizes and positions unchanged.
 - "System error" now reads "Something went wrong — try again".
 - Tag `demo-stable` marks the last commit before this pass.
+
+## Six display-only categories on the hub
+The hub now has 8 category tabs: LEGO, IKEA, PC Build, Home Repair, Car Care, Bike Repair, Field Technician, First Aid (plus My projects). The six new ones show what BuildSight could guide; LEGO and IKEA stay the only working flows.
+- Each new tab has a one-line description and 3–4 project cards laid out like the LEGO cards (category badge, title, "steps · time · level" line, "Start →").
+- Card photos are free Unsplash photos (Unsplash License, no Unsplash+), one per card, chosen to show the task. Each is downloaded once, cropped square like the LEGO tiles and saved as WebP (640 px, all under 80 KB) in `public/images/extra/<category>/<slug>.webp`; no hotlinking. Shown with `next/image`, same corners and hover zoom as the product photos, with alt text per card. Photographers and source links are in `CREDITS.md`. Brand-account photos (e.g. "Samsung Memory") were skipped; two photos were cropped by hand (one to keep the faucet in frame, one to leave out a company logo on a shirt). Some PC photos still show part brands on the hardware itself.
+- The category icon sits inside the card's category badge. The project has no icon library, so icons are inline SVG like the rest.
+- Tapping a new card shows a small toast, "Demo available for LEGO and IKEA", for 2.4 s. A toast beats a silent no-op, which reads as a broken tap. No navigation, no BuildView, no API call.
+- Every tab now has a small icon so old and new tabs match. On phones the tab row scrolls sideways and the tapped tab scrolls into view; at 1440 px all 9 fit on one line. The row's bottom rule is now an inset shadow so the scroll container doesn't clip the active underline.
+- In a new tab the search box filters its cards; the Search button (live LEGO/IKEA lookup) is hidden there.
+- Easy to remove: delete `src/data/extraCategories.ts`, `src/components/hud/ExtraCard.tsx`, `public/images/extra/`, `CREDITS.md`, and the lines in `Hub.tsx` that use them (`ExtraIcons.tsx` can stay for the tab icons).
