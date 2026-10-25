@@ -11,7 +11,7 @@ import type { CheckResult } from "@/app/api/check/route";
 import type { ExtractedStep } from "@/app/api/extract/route";
 import type { LocateResult } from "@/app/api/locate/route";
 import CameraFeed, { type CameraHandle } from "@/components/CameraFeed";
-import HighlightBox from "@/components/HighlightBox";
+import ManualPanel from "@/components/ManualPanel";
 import VoicePanel from "@/components/VoicePanel";
 import ZoomViewer from "@/components/ZoomViewer";
 import { getManual, getPageSteps, saveManual, savePageSteps, type Manual } from "@/lib/manuals";
@@ -436,35 +436,20 @@ export default function BuildView() {
         )}
       </AnimatePresence>
 
-      {/* target state: the manual's picture of this step */}
+      {/* target state: the manual's picture of this step (drag to move, corner grip to resize, tap to zoom) */}
       <AnimatePresence>
         {target && phase.kind === "ready" && (
-          <motion.aside
+          <ManualPanel
             key={target.slice(-40)}
-            initial={{ opacity: 0, x: 24 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: 24 }}
-            className={`absolute right-3 top-20 z-10 transition-[width] duration-300 sm:right-6 sm:top-24 sm:w-72 ${compact ? "w-24" : selectedPart != null ? "w-44" : "w-36"}`}
-          >
-            <button
-              onClick={() => setZoomOpen(true)}
-              aria-label={`Zoom into the manual picture for step ${step?.number}`}
-              aria-haspopup="dialog"
-              className="hud-panel holo-glow block w-full overflow-hidden rounded-xl text-left"
-            >
-              {!compact && (
-                <div className="flex items-center justify-between px-3 pt-2">
-                  <span className="text-[10px] font-semibold text-white/70 sm:text-[11px]">Step {step?.number} · manual</span>
-                  <span className="text-[10px] text-white/40">Tap to zoom</span>
-                </div>
-              )}
-              <div className="relative m-2 overflow-hidden rounded-lg bg-ink/60">
-                <img src={target} alt={`Manual picture for step ${step?.number}`} className={`w-full ${showManual ? "holo-image" : ""}`} />
-                {highlight?.result?.callout && <HighlightBox box={highlight.result.callout} kind="callout" />}
-                {highlight?.result?.placed && <HighlightBox box={highlight.result.placed} kind="placed" />}
-              </div>
-            </button>
-          </motion.aside>
+            target={target}
+            stepNumber={step?.number}
+            glow={showManual}
+            callout={highlight?.result?.callout}
+            placed={highlight?.result?.placed}
+            compact={compact}
+            defaultClassName={`absolute right-3 top-20 z-10 transition-[width] duration-300 sm:right-6 sm:top-24 sm:w-72 ${compact ? "w-24" : selectedPart != null ? "w-44" : "w-36"}`}
+            onOpen={() => setZoomOpen(true)}
+          />
         )}
       </AnimatePresence>
 
