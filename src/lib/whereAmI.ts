@@ -30,39 +30,57 @@ async function load(src: string): Promise<HTMLImageElement> {
   return img;
 }
 
+// Sheets are kept and reused while their tiles are the same, so automatic checks don't redraw them every time.
+// Only the sheets whose tiles changed (usually just the last one, as more pages are read) are drawn again.
+const sheetCache = new Map<string, Promise<string>>();
+
 export async function contactSheets(tiles: Tile[]): Promise<{ image: string; numbers: number[] }[]> {
   const sheets: { image: string; numbers: number[] }[] = [];
+  const keep = new Set<string>();
   for (let start = 0; start < tiles.length; start += COLS * ROWS) {
     const group = tiles.slice(start, start + COLS * ROWS);
-    const canvas = document.createElement("canvas");
-    canvas.width = COLS * TILE_W;
-    canvas.height = Math.ceil(group.length / COLS) * TILE_H;
-    const ctx = canvas.getContext("2d")!;
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    for (const [i, t] of group.entries()) {
-      const x = (i % COLS) * TILE_W;
-      const y = Math.floor(i / COLS) * TILE_H;
-      try {
-        const img = await load(t.image);
-        const scale = Math.min((TILE_W - 8) / img.width, (TILE_H - 8) / img.height);
-        const w = img.width * scale;
-        const h = img.height * scale;
-        ctx.drawImage(img, x + (TILE_W - w) / 2, y + (TILE_H - h) / 2, w, h);
-      } catch {
-        // a picture that won't load leaves its tile blank
-      }
-      ctx.strokeStyle = "#cccccc";
-      ctx.strokeRect(x + 0.5, y + 0.5, TILE_W - 1, TILE_H - 1);
-      ctx.fillStyle = "#111111";
-      ctx.fillRect(x, y, 48, 26);
-      ctx.fillStyle = "#ffffff";
-      ctx.font = "bold 18px sans-serif";
-      ctx.fillText(String(t.tile), x + 6, y + 19);
+    const key = group.map((t) => `${t.tile}:${t.page}:${t.number}:${t.image.length}`).join(",");
+    keep.add(key);
+    let image = sheetCache.get(key);
+    if (!image) {
+      image = drawSheet(group);
+      sheetCache.set(key, image);
     }
-    sheets.push({ image: canvas.toDataURL("image/jpeg", 0.8), numbers: group.map((t) => t.tile) });
+    sheets.push({ image: await image, numbers: group.map((t) => t.tile) });
   }
+  for (const key of sheetCache.keys()) if (!keep.has(key)) sheetCache.delete(key);
   return sheets;
+}
+
+async function drawSheet(group: Tile[]): Promise<string> {
+  const canvas = document.createElement("canvas");
+  canvas.width = COLS * TILE_W;
+  canvas.height = Math.ceil(group.length / COLS) * TILE_H;
+  const ctx = canvas.getContext("2d")!;
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  for (const [i, t] of group.entries()) {
+    const x = (i % COLS) * TILE_W;
+    const y = Math.floor(i / COLS) * TILE_H;
+    try {
+      const img = await load(t.image);
+      const scale = Math.min((TILE_W - 8) / img.width, (TILE_H - 8) / img.height);
+      const w = img.width * scale;
+      const h = img.height * scale;
+      ctx.drawImage(img, x + (TILE_W - w) / 2, y + (TILE_H - h) / 2, w, h);
+    } catch {
+      // a picture that won't load leaves its tile blank
+    }
+    ctx.strokeStyle = "#cccccc";
+    ctx.strokeRect(x + 0.5, y + 0.5, TILE_W - 1, TILE_H - 1);
+    ctx.fillStyle = "#111111";
+    ctx.fillRect(x, y, 48, 26);
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 18px sans-serif";
+    ctx.fillText(String(t.tile), x + 6, y + 19);
+  }
+  await new Promise((r) => setTimeout(r, 0)); // let a frame through before the JPEG encode
+  return canvas.toDataURL("image/jpeg", 0.8);
 }
 
 // ── 2. Ask the server ───────────────────────────────────────────────────────
