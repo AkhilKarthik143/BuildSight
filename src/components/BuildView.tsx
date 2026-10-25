@@ -7,6 +7,7 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import type { CheckResult } from "@/app/api/check/route";
+import CheckErrorOverlay from "@/components/CheckErrorOverlay";
 import type { ExtractedStep } from "@/app/api/extract/route";
 import type { LocateResult } from "@/app/api/locate/route";
 import type { PartMark } from "@/components/HighlightBox";
@@ -229,7 +230,12 @@ export default function BuildView() {
   const [target, setTarget] = useState<string | null>(null);
   const [targetKey, setTargetKey] = useState<string | null>(null); // which step `target` was cut for
   const [previous, setPrevious] = useState<string | null>(null);
-  const [check, setCheck] = useState<Check | null>(null);
+  // A check belongs to the step it ran on (its key); on any other step it isn't shown.
+  const [checkState, setCheckState] = useState<(Check & { key: string }) | null>(null);
+  const [issuePick, setIssuePick] = useState<number | null>(null); // problem tapped in the list: its box is brightened
+  const [showBoxes, setShowBoxes] = useState(true);
+  const checkSeq = useRef(0); // bumped by every new check and step change; older answers are dropped
+  const advance = useRef<ReturnType<typeof setTimeout> | null>(null); // the "Good, next step" after a pass
   const [muted, setMuted] = useState(false);
   const [showManual, setShowManual] = useState(false); // true = blue "hologram" tint; default is the real colors
   const [zoomOpen, setZoomOpen] = useState(false); // full-screen zoom viewer for the manual picture
@@ -239,6 +245,8 @@ export default function BuildView() {
   const compact = isPhone && !sheetOpen;
 
   const stepKey = `${page}-${stepIdx}`;
+  const check = checkState?.key === stepKey ? checkState : null;
+  const setCheck = useCallback((c: Check | null) => setCheckState(c && { ...c, key: stepKey }), [stepKey]);
   // Where each part sits in the manual picture, found once per part (see locatePart).
   const located = useRef(new Map<string, Promise<LocateResult | null>>());
   const [attempt, setAttempt] = useState(0); // bumped by Retry to re-read the page
@@ -256,7 +264,7 @@ export default function BuildView() {
   // Every page change shows the loading card first.
   const turnTo = useCallback((p: number) => {
     setPhase({ kind: "loading", label: `Reading page ${p}` });
-    setCheck(null);
+    setCheckState(null);
     setPage(p);
   }, []);
 
@@ -459,7 +467,7 @@ export default function BuildView() {
     (delta: 1 | -1) => {
       if (phase.kind !== "ready" || !doc) return;
       search.current++;
-      setCheck(null);
+      setCheckState(null);
       direction.current = delta;
       const nextIdx = stepIdx + delta;
       if (nextIdx >= 0 && nextIdx < steps.length) return setStepIdx(nextIdx);
@@ -475,7 +483,10 @@ export default function BuildView() {
     if (!step || !target || check?.state === "checking") return;
     const frame = camera.current?.capture();
     if (!frame) return setCheck({ state: "error", message: "Camera isn't ready yet." });
+    if (advance.current) clearTimeout(advance.current);
+    const seq = ++checkSeq.current;
     setCheck({ state: "checking" });
+    setIssuePick(null);
     try {
       const res = await fetch("/api/check", {
         method: "POST",
@@ -483,15 +494,21 @@ export default function BuildView() {
         body: JSON.stringify({ frame, expected: target, previous: previous ?? undefined, instruction: step.instruction, watchFor: step.watchFor }),
       });
       const data = await res.json();
+      if (seq !== checkSeq.current) return; // the step changed or a newer check started
       if (!res.ok) throw new Error(data.error);
       const result = data as CheckResult;
       setCheck({ state: "result", result, frame });
       if (!muted && result.say) speak(result.say);
-      if (result.step_complete && result.confidence >= 0.7) setTimeout(() => go(1), 1800);
+      if (result.step_complete && result.confidence >= 0.7) {
+        advance.current = setTimeout(() => {
+          if (seq === checkSeq.current) go(1);
+        }, 1800);
+      }
     } catch (e) {
+      if (seq !== checkSeq.current) return;
       setCheck({ state: "error", message: e instanceof Error && e.message ? e.message : "Check failed." });
     }
-  }, [step, target, previous, check?.state, muted, go]);
+  }, [step, target, previous, check?.state, muted, go, setCheck]);
 
   const speakStep = useCallback(() => {
     if (step && !muted) speak(spokenStep(step));
@@ -505,7 +522,7 @@ export default function BuildView() {
       const here = phase.kind === "ready" ? steps.findIndex((s) => s.number === n) : -1;
       if (here >= 0) {
         search.current++;
-        setCheck(null);
+        setCheckState(null);
         if (here === stepIdx) speakStep();
         else setStepIdx(here);
         return;
@@ -516,7 +533,7 @@ export default function BuildView() {
       for (let k = 1; k <= reach && page + k <= doc.numPages; k++) order.push(page + k);
       for (let k = 1; k <= reach && page - k >= 1; k++) order.push(page - k);
       const wasPhase = phase;
-      setCheck(null);
+      setCheckState(null);
       setPhase({ kind: "loading", label: `Finding step ${n}` });
       for (let i = 0; i < order.length; i++) {
         order.slice(i + 1, i + 3).forEach((p) => reader(p)); // read the next couple of pages meanwhile
@@ -537,7 +554,7 @@ export default function BuildView() {
       setCheck({ state: "error", message });
       if (!muted) speak(message);
     },
-    [doc, reader, phase, steps, stepIdx, page, muted, speakStep],
+    [doc, reader, phase, steps, stepIdx, page, muted, speakStep, setCheck],
   );
 
   // Once a step is up, read the rest of the book in the background, two pages at a time (so the page in view
@@ -565,7 +582,7 @@ export default function BuildView() {
   const openTile = useCallback(
     (t: Tile) => {
       search.current++; // cancel any running "go to step" search
-      setCheck(null);
+      setCheckState(null);
       if (t.page === page) {
         const idx = steps.findIndex((s) => s.number === t.number);
         if (idx >= 0) return setStepIdx(idx);
@@ -606,7 +623,7 @@ export default function BuildView() {
   const jumpToStep = useCallback(
     (toPage: number, idx: number) => {
       search.current++; // cancel any running "go to step" search
-      setCheck(null);
+      setCheckState(null);
       if (toPage === page) return setStepIdx(idx);
       landIdx.current = idx;
       direction.current = 1;
@@ -666,6 +683,12 @@ export default function BuildView() {
     [reader, doc, locating, muted, step, page, openTile],
   );
 
+  // A new step drops any check still running and a pending auto-advance (the old result hides itself: see `check`).
+  useEffect(() => {
+    checkSeq.current++;
+    if (advance.current) clearTimeout(advance.current);
+  }, [stepKey]);
+
   // Step changes the builder made (Next, Back, voice, tapping) hold off automatic jumps for a while.
   useEffect(() => {
     if (autoJump.current) autoJump.current = false;
@@ -678,7 +701,9 @@ export default function BuildView() {
   // 1.5 s (hands out of the way). At most every 20 s, and not within 20 s of the builder changing step.
   const autoState = useRef<{ ready: boolean; busy: boolean; findMyPlace: (automatic?: boolean) => void }>({ ready: false, busy: false, findMyPlace: () => {} });
   useEffect(() => {
-    autoState.current = { ready, busy: locating || check?.state === "checking", findMyPlace };
+    // A mistake on screen pauses it too, so it doesn't jump away while the builder is fixing it.
+    const reviewing = check?.state === "result" && check.result.issues.length > 0;
+    autoState.current = { ready, busy: locating || check?.state === "checking" || reviewing, findMyPlace };
   });
   useEffect(() => {
     if (!reader || !doc) return;
@@ -754,6 +779,7 @@ export default function BuildView() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (zoomOpen) return; // the zoom viewer handles its own keys
+      if (e.target instanceof HTMLElement && e.target.closest("button, input, textarea")) return; // a focused button handles its own Enter/Space
       if (e.key === "ArrowRight") go(1);
       if (e.key === "ArrowLeft") go(-1);
       if (e.key === " " || e.key === "Enter") {
@@ -1111,9 +1137,10 @@ export default function BuildView() {
                       initial={{ opacity: 0, height: 0 }}
                       animate={{ opacity: 1, height: "auto" }}
                       exit={{ opacity: 0, height: 0 }}
-                      onClick={() => setCheck(null)}
-                      title="Tap to dismiss"
-                      className={`mt-4 cursor-pointer overflow-hidden rounded-xl border p-3 text-sm ${
+                      // a mistake stays until Check again passes or Close; other results close on a tap
+                      onClick={verdict === "fix" ? undefined : () => setCheckState(null)}
+                      title={verdict === "fix" ? undefined : "Tap to dismiss"}
+                      className={`mt-4 overflow-hidden rounded-xl border p-3 text-sm ${verdict === "fix" ? "" : "cursor-pointer"} ${
                         check.state === "error" || verdict === "unsure" || verdict === "notyet"
                           ? "border-white/15 bg-white/5 text-white/80"
                           : verdict === "pass"
@@ -1131,17 +1158,53 @@ export default function BuildView() {
                           </p>
                           <p className="mt-1">{check.result.say}</p>
                           {verdict === "fix" && check.result.issues.length > 0 && (
-                            // Phones: just your photo, small (the manual picture is already on screen). Desktop: side by side.
-                            <div className="mt-3 grid grid-cols-[auto] gap-2 sm:grid-cols-2">
-                              <figure className="hidden sm:block">
-                                <img src={target ?? ""} alt="Manual" className="max-h-40 w-full rounded-md bg-white object-contain" />
-                                <figcaption className="mt-1 text-[10px] text-white/50">Manual</figcaption>
-                              </figure>
-                              <figure>
-                                <img src={check.frame} alt="Your build" className="max-h-24 rounded-md object-cover sm:max-h-40 sm:w-full" />
-                                <figcaption className="mt-1 text-[10px] text-white/50">Your build</figcaption>
-                              </figure>
-                            </div>
+                            <>
+                              {/* Phones: just your photo with the boxes (the manual picture is already on screen). Desktop: side by side. */}
+                              <div className="mt-3 grid grid-cols-[auto] items-start gap-2 sm:grid-cols-2">
+                                <figure className="hidden sm:block">
+                                  <img src={target ?? ""} alt="Manual" className="max-h-56 w-full rounded-md bg-white object-contain" />
+                                  <figcaption className="mt-1 text-[10px] text-white/50">Manual</figcaption>
+                                </figure>
+                                <figure>
+                                  <CheckErrorOverlay frame={check.frame} issues={check.result.issues} selected={issuePick} show={showBoxes} />
+                                  <figcaption className="mt-1 text-[10px] text-white/50">Your build</figcaption>
+                                </figure>
+                              </div>
+                              <ol className="mt-3 space-y-1.5" data-issue-list>
+                                {check.result.issues.map((issue, i) => (
+                                  <li key={i}>
+                                    <button
+                                      onClick={() => setIssuePick((p) => (p === i ? null : i))}
+                                      className={`flex w-full gap-2 rounded-lg px-2 py-1.5 text-left transition ${issuePick === i ? "bg-amber-300/20" : "bg-black/20"}`}
+                                    >
+                                      <span className="mt-px h-[18px] min-w-[18px] rounded bg-amber-300 text-center text-[11px] font-bold leading-[18px] text-ink">{i + 1}</span>
+                                      <span className="min-w-0">
+                                        <span className="font-semibold">{issue.part || "Piece"}</span>
+                                        {issue.problem && <span className="text-amber-100/80">: {issue.problem}</span>}
+                                        {issue.fix && <span className="block text-white/85">{issue.fix}</span>}
+                                        {!issue.box && <span className="block text-[10px] text-white/45">Couldn&apos;t pin this one on the photo</span>}
+                                      </span>
+                                    </button>
+                                  </li>
+                                ))}
+                              </ol>
+                              <div className="mt-3 flex gap-2">
+                                <button
+                                  onClick={runCheck}
+                                  className="flex-1 rounded-lg bg-amber-300 py-2 text-xs font-semibold text-ink active:scale-[0.98]"
+                                >
+                                  Check again
+                                </button>
+                                {check.result.issues.some((i) => i.box) && (
+                                  <button onClick={() => setShowBoxes((v) => !v)} className="rounded-lg bg-white/10 px-3 py-2 text-xs font-medium">
+                                    {showBoxes ? "Hide boxes" : "Show boxes"}
+                                  </button>
+                                )}
+                                <button onClick={() => setCheckState(null)} className="rounded-lg bg-white/10 px-3 py-2 text-xs font-medium">
+                                  Close
+                                </button>
+                              </div>
+                            </>
                           )}
                         </>
                       )}
