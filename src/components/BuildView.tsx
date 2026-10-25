@@ -73,6 +73,17 @@ async function withGrid(src: string): Promise<string> {
   return canvas.toDataURL("image/jpeg", 0.75);
 }
 
+// "Step 8" or, for a panel inside a step, "Step 8 · 2 of 4".
+// A "continued" step (a page with no printed number) shows the step it continues, when known.
+function stepLabel(s: ExtractedStep) {
+  if (s.continued) return s.number ? `Step ${s.number} · continued` : "Continued";
+  return `Step ${s.number}${s.sub ? ` · ${s.sub.replace("/", " of ")}` : ""}`;
+}
+function spokenStep(s: ExtractedStep) {
+  if (s.continued) return `${s.number ? `Step ${s.number}, continued` : "Continuing"}. ${s.instruction}`;
+  return `Step ${s.number}${s.sub ? `, part ${s.sub.replace("/", " of ")}` : ""}. ${s.instruction}`;
+}
+
 // True on phone-width screens (Tailwind's `sm` breakpoint is 640px).
 const PHONE_QUERY = "(max-width: 639px)";
 function useIsPhone() {
@@ -149,7 +160,7 @@ function pageReader(manualId: string, source: PageSource) {
       }
       const pageImage = await image();
       const data = await limit(async () => {
-        const res = await fetch("/api/extract", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ page: pageImage }) });
+        const res = await fetch("/api/extract", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ page: await withGrid(pageImage) }) });
         const body = await res.json();
         if (!res.ok) throw new Error(body.error ?? "Couldn't read that page.");
         return body;
@@ -157,10 +168,24 @@ function pageReader(manualId: string, source: PageSource) {
       await savePageSteps(manualId, page, data.steps);
       return data.steps as ExtractedStep[];
     })();
-    const job = { image, steps };
+    // Continuation pages: a page with no printed step number, or one whose number is lower than the
+    // previous page's (step numbers only go up, so a lower one is a panel number from a sub-build),
+    // continues the previous page's last step and takes its number.
+    const numbered = steps.then(async (found) => {
+      if (page < 2 || found.length === 0) return found;
+      const before = await (jobs.get(page - 1)?.steps ?? getPageSteps<ExtractedStep>(manualId, page - 1)).catch(() => null);
+      const last = before?.filter((s) => s.number).at(-1)?.number;
+      if (!last) return found;
+      return found.map((s) =>
+        (s.continued && !s.number) || (s.number && s.number < last && !s.continued)
+          ? { ...s, number: last, continued: true, sub: undefined }
+          : s,
+      );
+    });
+    const job = { image, steps: numbered };
     // A failed page can be retried.
-    steps.catch(() => jobs.delete(page));
-    steps.then((found) => read.set(page, found)).catch(() => {});
+    numbered.catch(() => jobs.delete(page));
+    numbered.then((found) => read.set(page, found)).catch(() => {});
     jobs.set(page, job);
     return job;
   };
@@ -416,7 +441,7 @@ export default function BuildView() {
 
   // 4. read each new step aloud
   useEffect(() => {
-    if (phase.kind === "ready" && step && !muted) speak(`Step ${step.number}. ${step.instruction}`);
+    if (phase.kind === "ready" && step && !muted) speak(spokenStep(step));
   }, [phase.kind, step, muted]);
   useEffect(() => stopSpeaking, []);
 
@@ -474,7 +499,7 @@ export default function BuildView() {
   }, [step, target, previous, check?.state, muted, go]);
 
   const speakStep = useCallback(() => {
-    if (step && !muted) speak(`Step ${step.number}. ${step.instruction}`);
+    if (step && !muted) speak(spokenStep(step));
   }, [step, muted]);
 
   // Jumps to step n: on this page at once; otherwise reads pages ahead (then behind) until one has step n.
@@ -671,7 +696,7 @@ export default function BuildView() {
         case "repeat":
           if (!step) return null;
           speakStep();
-          return `Step ${step.number}. ${step.instruction}`;
+          return spokenStep(step);
         case "check":
           runCheck();
           return "Checking your build…";
@@ -776,7 +801,7 @@ export default function BuildView() {
           <ManualPanel
             key={target.slice(-40)}
             target={target}
-            stepNumber={step?.number}
+            stepNumber={step && stepLabel(step).replace(/^Step /, "")}
             glow={showManual}
             marks={marks}
             compact={compact}
@@ -793,7 +818,7 @@ export default function BuildView() {
             key="zoom"
             target={target}
             pageImage={pageImage}
-            stepNumber={step?.number}
+            stepNumber={step && stepLabel(step).replace(/^Step /, "")}
             glow={showManual}
             onGlowChange={setShowManual}
             marks={marks}
@@ -811,7 +836,7 @@ export default function BuildView() {
           onCommand={onCommand}
           context={{
             manual: manual?.title,
-            step: step && { number: step.number, instruction: step.instruction, parts: step.parts.map((p) => `${p.qty}x ${p.name}`), watchFor: step.watchFor, selectedPart: selectedPart != null ? step.parts[selectedPart]?.name : undefined },
+            step: step && { number: step.sub ? `${step.number} (${step.sub.replace("/", " of ")})` : step.number, instruction: step.instruction, parts: step.parts.map((p) => `${p.qty}x ${p.name}`), watchFor: step.watchFor, selectedPart: selectedPart != null ? step.parts[selectedPart]?.name : undefined },
           }}
         />
       </div>
@@ -932,7 +957,7 @@ export default function BuildView() {
               <div className="flex items-center gap-3">
                 <button onClick={() => setSheetOpen(true)} className="min-w-0 flex-1 text-left">
                   <p className="text-[11px] font-semibold text-sky-300">
-                    Step {step.number}
+                    {stepLabel(step)}
                     {check?.state === "result" && (
                       <span className={verdict === "pass" ? "text-emerald-300" : verdict === "fix" ? "text-amber-300" : "text-white/50"}>
                         {" "}· {{ pass: "Verified", fix: "Hold on", notyet: "Not done yet", unsure: "Need a better look" }[verdict ?? "unsure"]}
@@ -1012,7 +1037,7 @@ export default function BuildView() {
             {phase.kind === "ready" && step && !compact && (
               <>
                 <div className="flex items-baseline justify-between">
-                  <p className="text-xs font-semibold text-sky-300">Step {step.number}</p>
+                  <p className="text-xs font-semibold text-sky-300">{stepLabel(step)}</p>
                   <p className="text-[11px] text-white/40">
                     {stepIdx + 1}/{steps.length} on page {page}
                   </p>
