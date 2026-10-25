@@ -38,7 +38,9 @@ export function readAction(raw: unknown): AssistAction {
 
 /**
  * Streams the "transcript" string out of a JSON reply as it arrives. feed() returns the newly decoded text.
- * If the reply turns out not to be JSON (the model answered in plain prose), the text passes straight through.
+ * If the reply turns out not to be JSON (the model answered in plain prose), the text passes straight through,
+ * up to any JSON the model tacks on after it ("Sure, press it down. {"transcript": "Sure, press it down."...}"):
+ * that part is never shown or spoken, only its action is used.
  */
 export function readTranscript() {
   let raw = "";
@@ -64,8 +66,17 @@ export function readTranscript() {
         continue;
       }
       if (mode === "prose") {
-        out += raw.slice(pos);
-        pos = raw.length;
+        // Spoken prose has no braces or backticks, so one means JSON is starting: stop there.
+        const rest = raw.slice(pos);
+        const cut = rest.search(/[{`]/);
+        if (cut < 0) {
+          out += rest;
+          pos = raw.length;
+          break;
+        }
+        out += rest.slice(0, cut);
+        pos += cut;
+        mode = "after";
         break;
       }
       if (mode === "seek") {
@@ -115,6 +126,8 @@ export function readTranscript() {
   function finish(): { transcript: string; action: AssistAction } {
     if (mode === "prose" || mode === "start") return { transcript: transcript.trim(), action: { action: "none" } };
     const obj = parseObject(raw);
+    // Prose followed by JSON: the prose was already spoken, so keep it; take only the action from the JSON.
+    if (transcript.trim() && !/^\s*[{`]/.test(raw)) return { transcript: transcript.replace(/\s+/g, " ").trim(), action: readAction(obj) };
     const full = typeof obj?.transcript === "string" ? obj.transcript : transcript;
     return { transcript: full.replace(/\s+/g, " ").trim(), action: readAction(obj) };
   }

@@ -191,3 +191,8 @@ The hub now has 8 category tabs: LEGO, IKEA, PC Build, Home Repair, Car Care, Bi
 - Every tab now has a small icon so old and new tabs match. On phones the tab row scrolls sideways and the tapped tab scrolls into view; at 1440 px all 9 fit on one line. The row's bottom rule is now an inset shadow so the scroll container doesn't clip the active underline.
 - In a new tab the search box filters its cards; the Search button (live LEGO/IKEA lookup) is hidden there.
 - Easy to remove: delete `src/data/extraCategories.ts`, `src/components/hud/ExtraCard.tsx`, `public/images/extra/`, `CREDITS.md`, and the lines in `Hub.tsx` that use them (`ExtraIcons.tsx` can stay for the tab icons).
+
+## Voice replies no longer play twice
+After the first question, the model sometimes answered in plain text and then added the JSON it was asked for, so the answer was spoken, then the raw JSON appeared and was spoken again.
+- Cause: earlier answers went back to the model as plain text, which taught it to answer in prose. In JSON mode they now go back as `{"transcript", "action": "none"}`.
+- Safety net in `readTranscript()`: plain text stops at the first `{` or backtick. The JSON after it is never shown or spoken; only its action is used. Tests added to `npm run test:assist`.

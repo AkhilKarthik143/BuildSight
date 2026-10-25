@@ -67,8 +67,14 @@ export async function POST(request: Request) {
   const frame = body.frame && body.frame.length < MAX_IMAGE_CHARS ? body.frame : undefined;
 
   const ctx = context(body);
+  const json = body.format === "json";
   const turns: Turn[] = [
-    ...(body.history ?? []).slice(-MAX_TURNS).filter((t) => t.text?.trim()),
+    // In JSON mode, earlier answers go back as JSON too: plain-text examples make the model answer in prose and
+    // then add the JSON, which the app would show and speak twice.
+    ...(body.history ?? [])
+      .slice(-MAX_TURNS)
+      .filter((t) => t.text?.trim())
+      .map((t) => (json && t.role === "assistant" ? { ...t, text: JSON.stringify({ transcript: t.text, action: "none" }) } : t)),
     {
       role: "user",
       text: `${ctx ? `${ctx}\n\n` : ""}${frame ? "Camera photo attached. " : "No camera photo this time. "}They said: "${question}"`,
@@ -78,7 +84,7 @@ export async function POST(request: Request) {
   // History must start with the user.
   while (turns.length && turns[0].role !== "user") turns.shift();
 
-  const chunks = streamClaude(body.format === "json" ? SYSTEM_PROMPT + JSON_RULES : SYSTEM_PROMPT, turns);
+  const chunks = streamClaude(json ? SYSTEM_PROMPT + JSON_RULES : SYSTEM_PROMPT, turns);
 
   // Wait for the first chunk so an early failure comes back as a clear error, not a broken stream.
   let first: IteratorResult<string>;

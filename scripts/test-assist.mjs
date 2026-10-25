@@ -35,6 +35,14 @@ eq("goto", run('{"transcript":"Going to step five.","action":"goto","goto_step":
 eq("code fence", run('```json\n{"transcript": "Sure.", "action": "prev"}\n```', 5), { streamed: "Sure.", transcript: "Sure.", action: { action: "prev" } });
 eq("unicode + newline escapes", run('{"transcript":"Caf\\u00e9 time.\\nNext line.","action":"none"}', 1).streamed, "Café time. Next line.");
 eq("plain prose passes through", run("Press the brick down firmly.", 4), { streamed: "Press the brick down firmly.", transcript: "Press the brick down firmly.", action: { action: "none" } });
+for (const n of [1, 4, 1000]) {
+  eq(
+    `prose then JSON, chunks of ${n}: spoken once`,
+    run('Press the red brick down. {"transcript": "Press the red brick down.", "action": "next"}', n),
+    { streamed: "Press the red brick down. ", transcript: "Press the red brick down.", action: { action: "next" } },
+  );
+}
+eq("prose then fenced JSON", run('Sure.\n```json\n{"transcript": "Sure.", "action": "none"}\n```', 3), { streamed: "Sure.\n", transcript: "Sure.", action: { action: "none" } });
 eq("cut off mid-reply keeps the words", run('{"transcript": "Press the red', 3), { streamed: "Press the red", transcript: "Press the red", action: { action: "none" } });
 
 // Actions are validated; anything odd becomes "none" (never a wrong move).
