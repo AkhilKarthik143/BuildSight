@@ -78,6 +78,10 @@ Format: **Decision** — why. *(date, PT)*
 
 ## Hub and manuals
 
+- **Step checks report `can_see`** (Sat Oct 24, ~6:45 PM): when the camera doesn't clearly show the build (dark, covered, blurry, or a printed manual page instead of real bricks), the result is "Need a better look" with no percentage and no issue list. Before, "the camera is black" came back as "Hold on · 95%". The server enforces it (confidence capped at 0.3, issues cleared), so the button, voice "check" and auto-detect all behave the same.
+- **On phones, a check result gets room instead of growing the card** (Sat Oct 24, ~6:45 PM): while it shows, the part holograms, part chips and tip step aside, and the comparison shows just a small photo of your build (the manual picture is already on screen; desktop keeps both side by side). Tap the result to dismiss it and bring the holograms back. Before, the card grew past the screen and pushed the holograms into the header.
+- **Hub search shows a live scanner** (Sat Oct 24, ~6:45 PM): "Searching IKEA for “kallax”" (or "Looking up LEGO set 31163"), a mono log of the steps the search takes ticking off, and bracketed placeholder cards with a scan sweep. The "nothing in the catalog matches" line no longer shows mid-search, and it names the right store.
+
 - **Home page is a hub, Jarvis-inspired HUD look** (dark navy, cyan glow, rotating rings, corner-bracket panels, Rajdhani + Geist Mono). Inspired by the style only; no Marvel names, logos or assets. *(Sat Oct 24, ~3 AM)*
 - **Manual search: a 4–7 digit number searches LEGO by set number** (scraped from lego.com's building-instructions page: book names, sizes, PDFs, covers); **anything else searches IKEA** (IKEA's public product search, then each product page's assembly PDFs, keeping only PDFs named after the product, de-duplicated across color variants). *(Sat Oct 24, ~3 AM)*
 - **Hub organized into three tabs: LEGO, IKEA, My projects,** with category chips (LEGO themes; IKEA Tables & desks / Storage / Seating / Beds / Kids). *(Sat Oct 24, ~10 AM)*

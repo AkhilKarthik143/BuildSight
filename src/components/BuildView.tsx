@@ -703,10 +703,13 @@ export default function BuildView() {
     return () => window.removeEventListener("keydown", onKey);
   }, [go, runCheck, zoomOpen]);
 
+  // Phones are short: while a check result shows, the step card drops the extras (holograms, chips, tip) to make room.
+  const roomForResult = isPhone && check != null && check.state !== "checking";
+
   const verdict = useMemo(() => {
     if (check?.state !== "result") return null;
     const { result } = check;
-    if (result.confidence < 0.5) return "unsure" as const;
+    if (!result.can_see || result.confidence < 0.5) return "unsure" as const;
     if (result.issues.length > 0) return "fix" as const;
     return result.step_complete ? ("pass" as const) : ("notyet" as const);
   }, [check]);
@@ -844,7 +847,7 @@ export default function BuildView() {
             </motion.div>
           )}
         </AnimatePresence>
-        {phase.kind === "ready" && part && !compact && (
+        {phase.kind === "ready" && part && !compact && !roomForResult && (
           // On phones the manual panel sits top right (about 9rem wide), so keep the holograms left of it.
           <div className="flex items-end justify-start gap-3 pr-[10rem] sm:pr-0">
             {holoState !== "none" && step && (
@@ -995,7 +998,7 @@ export default function BuildView() {
                 </div>
                 <h1 className="mt-1 text-xl font-semibold leading-snug sm:text-2xl">{step.instruction}</h1>
 
-                {step.watchFor[0] && (
+                {step.watchFor[0] && !roomForResult && (
                   <p className="mt-3 flex gap-2 text-xs text-amber-200/90">
                     <span className="font-mono">⚠</span>
                     {step.watchFor[0]}
@@ -1008,7 +1011,9 @@ export default function BuildView() {
                       initial={{ opacity: 0, height: 0 }}
                       animate={{ opacity: 1, height: "auto" }}
                       exit={{ opacity: 0, height: 0 }}
-                      className={`mt-4 overflow-hidden rounded-xl border p-3 text-sm ${
+                      onClick={() => setCheck(null)}
+                      title="Tap to dismiss"
+                      className={`mt-4 cursor-pointer overflow-hidden rounded-xl border p-3 text-sm ${
                         check.state === "error" || verdict === "unsure" || verdict === "notyet"
                           ? "border-white/15 bg-white/5 text-white/80"
                           : verdict === "pass"
@@ -1021,18 +1026,19 @@ export default function BuildView() {
                       ) : (
                         <>
                           <p className="text-[11px] font-semibold">
-                            {{ pass: "Verified", fix: "Hold on", notyet: "Not done yet", unsure: "Need a better look" }[verdict ?? "unsure"]} ·{" "}
-                            {Math.round(check.result.confidence * 100)}%
+                            {{ pass: "Verified", fix: "Hold on", notyet: "Not done yet", unsure: "Need a better look" }[verdict ?? "unsure"]}
+                            {verdict !== "unsure" && ` · ${Math.round(check.result.confidence * 100)}%`}
                           </p>
                           <p className="mt-1">{check.result.say}</p>
                           {verdict === "fix" && check.result.issues.length > 0 && (
-                            <div className="mt-3 grid grid-cols-2 gap-2">
-                              <figure>
-                                <img src={target ?? ""} alt="Manual" className="rounded-md bg-white" />
+                            // Phones: just your photo, small (the manual picture is already on screen). Desktop: side by side.
+                            <div className="mt-3 grid grid-cols-[auto] gap-2 sm:grid-cols-2">
+                              <figure className="hidden sm:block">
+                                <img src={target ?? ""} alt="Manual" className="max-h-40 w-full rounded-md bg-white object-contain" />
                                 <figcaption className="mt-1 text-[10px] text-white/50">Manual</figcaption>
                               </figure>
                               <figure>
-                                <img src={check.frame} alt="Your build" className="rounded-md" />
+                                <img src={check.frame} alt="Your build" className="max-h-24 rounded-md object-cover sm:max-h-40 sm:w-full" />
                                 <figcaption className="mt-1 text-[10px] text-white/50">Your build</figcaption>
                               </figure>
                             </div>
