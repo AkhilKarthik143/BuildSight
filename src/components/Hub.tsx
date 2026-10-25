@@ -325,7 +325,7 @@ export default function Hub() {
             <motion.div layout className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4">
               <AnimatePresence mode="popLayout">
                 {extraShown.map((p, i) => (
-                  <ExtraCard key={p.id} project={p} category={extra.label} index={i} onOpen={showDemoToast} />
+                  <ExtraCard key={p.id} project={p} category={extra.label} icon={extra.icon} index={i} onOpen={showDemoToast} />
                 ))}
               </AnimatePresence>
             </motion.div>
