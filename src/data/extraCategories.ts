@@ -10,6 +10,7 @@ export type ExtraProject = {
   subtitle: string; // shown where LEGO shows "#set · pcs · age"
   image: string; // square WebP in public/images/extra (sources in CREDITS.md)
   alt: string;
+  href?: string; // opens Practice Mode instead of the demo toast
 };
 
 export type ExtraCategory = {
@@ -27,8 +28,15 @@ export const EXTRA_CATEGORIES: ExtraCategory[] = [
     icon: "cpu",
     description: "Seat a CPU, route the cables, add more RAM. BuildSight checks each part before you power on.",
     projects: [
+      {
+        id: "pc-gpu",
+        title: "Install RAM + GPU",
+        subtitle: "4 steps · 10 min · Beginner",
+        image: "/images/extra/pc/install-a-gpu.webp",
+        alt: "An open PC tower on a desk with a graphics card fitted below the CPU cooler",
+        href: "/practice/pc",
+      },
       { id: "pc-gaming", title: "Gaming PC build", subtitle: "12 steps · 2 hr · Intermediate", image: "/images/extra/pc/gaming-pc-build.webp", alt: "An open PC case with the motherboard, water cooler and power supply installed" },
-      { id: "pc-gpu", title: "Install a GPU", subtitle: "6 steps · 20 min · Beginner", image: "/images/extra/pc/install-a-gpu.webp", alt: "An open PC tower on a desk with a graphics card fitted below the CPU cooler" },
       { id: "pc-ram", title: "Upgrade RAM", subtitle: "4 steps · 10 min · Beginner", image: "/images/extra/pc/upgrade-ram.webp", alt: "Four RAM sticks seated in a motherboard's memory slots" },
       { id: "pc-ssd", title: "Add an M.2 SSD", subtitle: "5 steps · 15 min · Beginner", image: "/images/extra/pc/add-an-m2-ssd.webp", alt: "An M.2 SSD installed in its slot on a motherboard" },
     ],

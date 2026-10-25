@@ -1240,6 +1240,16 @@ export default function BuildView() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+        {/\/645575\d\.pdf$/.test(manual?.pdfPath ?? "") && (
+          <Link
+            href="/practice/parrot"
+            aria-label="Practice in AR"
+            title="Practice in AR"
+            className="hud-panel grid h-9 place-items-center rounded-xl px-2.5 text-xs font-semibold text-holo transition hover:text-white"
+          >
+            AR
+          </Link>
+        )}
         <button
           onClick={() => restart()}
           disabled={!doc}

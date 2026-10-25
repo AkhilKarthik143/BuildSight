@@ -49,12 +49,13 @@ export default function ExtraCard({
             <Icon name={icon} className="h-3 w-3" strokeWidth={2} />
             {category}
           </span>
+          {project.href && <span className="rounded-md bg-holo px-2 py-0.5 text-[10px] font-semibold text-ink">AR</span>}
         </span>
       </div>
       <div className="flex flex-1 flex-col p-3.5">
         <h3 className="line-clamp-2 text-[14px] font-semibold leading-snug tracking-tight">{project.title}</h3>
         <p className="mt-1 text-[11px] text-white/45">{project.subtitle}</p>
-        <span className="mt-auto pt-3 text-xs font-semibold text-holo opacity-80 transition group-hover:opacity-100">Start →</span>
+        <span className="mt-auto pt-3 text-xs font-semibold text-holo opacity-80 transition group-hover:opacity-100">{project.href ? "Practice in AR →" : "Start →"}</span>
       </div>
     </motion.button>
   );
