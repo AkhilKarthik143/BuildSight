@@ -1,6 +1,10 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // The Azure container image builds a self-contained server (Dockerfile sets BUILD_STANDALONE); Vercel doesn't need it.
+  ...(process.env.BUILD_STANDALONE ? { output: "standalone" as const } : {}),
+  // Application Insights (src/instrumentation.node.ts) loads from node_modules at runtime rather than being bundled.
+  serverExternalPackages: ["@azure/monitor-opentelemetry"],
   cacheComponents: true,
   partialPrefetching: true,
   turbopack: {
