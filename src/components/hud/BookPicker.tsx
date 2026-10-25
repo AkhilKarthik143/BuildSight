@@ -1,6 +1,7 @@
 "use client";
 
 import { motion } from "motion/react";
+import Link from "next/link";
 import { useEffect } from "react";
 import ProductImage from "@/components/hud/ProductImage";
 import type { CatalogItem, CatalogManual } from "@/lib/catalog";
@@ -47,6 +48,19 @@ export default function BookPicker({ item, onPick, onClose }: { item: CatalogIte
             ✕
           </button>
         </div>
+        {item.id === "lego-31136" && (
+          <Link
+            href="/practice/parrot"
+            className="mt-4 flex items-center gap-3 rounded-xl border border-holo/40 bg-holo/10 px-3.5 py-3 transition hover:bg-holo/20"
+          >
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-holo text-[11px] font-bold text-ink">AR</span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-semibold">Practice in AR</span>
+              <span className="block text-xs text-white/55">Learn the base (steps 1–5) on your table, no bricks needed</span>
+            </span>
+            <span aria-hidden className="text-holo">→</span>
+          </Link>
+        )}
         <div className="mt-4 grid grid-cols-3 gap-3">
           {item.manuals.map((m) => (
             <button
