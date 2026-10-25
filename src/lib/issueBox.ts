@@ -102,12 +102,23 @@ export function photoLabel(issues: CheckIssue[]): string {
   return n ? `Your build, ${n} problem${n === 1 ? "" : "s"} marked` : "Your build, no problems could be marked";
 }
 
-/** What a step check result means for the screen (and what to say). Mistakes need a clear, fairly sure look. */
+type Verdictable = { can_see: boolean; confidence: number; step_complete: boolean; issues: unknown[] };
+
+/** A step check passes only when it can see the build, is sure, says done, and found nothing wrong. The one rule
+ * for moving on, used by the manual Check and Auto Mode alike. */
+export const PASS_CONFIDENCE = 0.7;
+export function isPass(r: Verdictable): boolean {
+  return r.can_see && r.confidence >= PASS_CONFIDENCE && r.step_complete && r.issues.length === 0;
+}
+
+/** What a step check result means for the screen (and what to say). Mistakes need a clear, fairly sure look.
+ * "Verified" (pass) shows exactly when isPass() is true, so the screen never says one thing while doing another. */
 export type CheckVerdict = "pass" | "fix" | "notyet" | "unsure";
-export function checkVerdict(r: { can_see: boolean; confidence: number; step_complete: boolean; issues: unknown[] }): CheckVerdict {
+export function checkVerdict(r: Verdictable): CheckVerdict {
+  if (isPass(r)) return "pass";
   if (!r.can_see || r.confidence < 0.5) return "unsure";
   if (r.issues.length > 0) return "fix";
-  return r.step_complete ? "pass" : "notyet";
+  return r.step_complete ? "unsure" : "notyet"; // "done" but not sure enough to move on
 }
 
 /** A check result only counts on the step it ran on: anything tagged with another step shows nothing. */

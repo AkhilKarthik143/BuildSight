@@ -8,7 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import type { CheckResult } from "@/app/api/check/route";
 import CheckErrorOverlay, { IssueBoxes, LiveIssueBoxes, WarnGlyph } from "@/components/CheckErrorOverlay";
-import { CATEGORY_TAG, checkVerdict, forStep, issueCategory, issueLabel, photoLabel, spokenIssues } from "@/lib/issueBox";
+import { CATEGORY_TAG, checkVerdict, forStep, isPass, issueCategory, issueLabel, photoLabel, spokenIssues } from "@/lib/issueBox";
 import type { ExtractedStep } from "@/app/api/extract/route";
 import type { LocateResult } from "@/app/api/locate/route";
 import type { PartMark } from "@/components/HighlightBox";
@@ -27,10 +27,74 @@ import { loadPrebuilt, type Prebuilt } from "@/lib/prebuilt";
 import { speak, speaker, stopSpeaking } from "@/lib/speech";
 import { AUTO_MIN_CONFIDENCE, changed, decide, MAX_TILES, whereAmI, type Tile } from "@/lib/whereAmI";
 import { encodeCanvas } from "@/lib/encode";
+import {
+  AUTO_ADVANCE_MS,
+  AUTO_CHANGE_THRESHOLD,
+  AUTO_MAX_MISSES,
+  AUTO_SPEAK_FIX_CONFIDENCE,
+  MANUAL_ADVANCE_MS,
+  markChecked,
+  newWatch,
+  recordMiss,
+  resetForStep,
+  tick,
+} from "@/lib/autoCheck";
 
 
 type Phase = { kind: "loading"; label: string } | { kind: "ready" } | { kind: "error"; message: string } | { kind: "done" };
-type Check = { state: "checking" } | { state: "result"; result: CheckResult; frame: string; id: number; sample: Uint8ClampedArray | null } | { state: "error"; message: string };
+type Check = { state: "checking"; auto?: boolean } | { state: "result"; result: CheckResult; frame: string; id: number; sample: Uint8ClampedArray | null } | { state: "error"; message: string };
+// A pending move to the next step after a pass. `id` is the check it came from: it lives only while that result is on
+// screen for this step, so a step change, a new check or dismissing the result drops it. `started` once the countdown runs.
+type Advance = { id: number; delay: number; waitForVoice: boolean; started: boolean };
+
+// Auto Mode on/off, remembered per device. Off by default, so the manual Check flow is unchanged until it's turned on.
+const AUTO_KEY = "buildsight:autoMode";
+const autoListeners = new Set<() => void>();
+function readAutoMode() {
+  try {
+    return localStorage.getItem(AUTO_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+function setAutoModeStored(on: boolean) {
+  try {
+    localStorage.setItem(AUTO_KEY, on ? "1" : "0");
+  } catch {}
+  autoListeners.forEach((fn) => fn());
+}
+function useAutoMode() {
+  return useSyncExternalStore(
+    (onChange) => {
+      autoListeners.add(onChange);
+      return () => void autoListeners.delete(onChange);
+    },
+    readAutoMode,
+    () => false,
+  );
+}
+
+// The Auto Mode switch. Lit when on; the manual Check button sits beside it and always works.
+function AutoToggle({ on, small }: { on: boolean; small?: boolean }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      aria-label="Auto Mode: check each step automatically"
+      title="Auto Mode (A): check each step when you finish it, and move on when it passes"
+      onClick={() => setAutoModeStored(!on)}
+      className={`flex shrink-0 items-center gap-2 rounded-xl border text-xs font-semibold transition active:scale-95 ${small ? "px-2.5 py-2.5" : "px-3"} ${
+        on ? "border-emerald-300/50 bg-emerald-300/15 text-emerald-200" : "border-white/15 bg-white/[0.06] text-white/60 hover:text-white/85"
+      }`}
+    >
+      <span className={`relative h-3.5 w-6 rounded-full transition ${on ? "bg-emerald-300/80" : "bg-white/20"}`}>
+        <span className={`absolute top-0.5 h-2.5 w-2.5 rounded-full bg-white transition-all ${on ? "left-3" : "left-0.5"}`} />
+      </span>
+      Auto
+    </button>
+  );
+}
 
 // Every step picture on one page, cut out and scaled to THUMB_H px tall, decoding the page only once.
 // Shared by the step strip and "where am I?" (see thumbsFor), so each picture is cut once per session.
@@ -257,7 +321,9 @@ export default function BuildView() {
   // (the check hides) or Close all end it without extra bookkeeping.
   const [photoFor, setPhotoFor] = useState<number | null>(null);
   const checkSeq = useRef(0); // bumped by every new check and step change; older answers are dropped
-  const advance = useRef<ReturnType<typeof setTimeout> | null>(null); // the "Good, next step" after a pass
+  // the move to the next step after a pass: shown as a countdown bar with Cancel (see the effect after runCheck)
+  const [advance, setAdvance] = useState<Advance | null>(null);
+  const voiceDone = useRef<Promise<unknown>>(Promise.resolve()); // resolves when the last check result finishes speaking
   const [muted, setMuted] = useState(false);
   const [showManual, setShowManual] = useState(false); // true = blue "hologram" tint; default is the real colors
   const [zoomOpen, setZoomOpen] = useState(false); // full-screen zoom viewer for the manual picture
@@ -287,6 +353,11 @@ export default function BuildView() {
   const autoJump = useRef(false); // the next step change is ours, not the builder's
   const firstAutoDone = useRef(false);
   const baseline = useRef<Uint8ClampedArray | null>(null); // camera sample at the last automatic check
+  // Auto Mode: checks the build on its own ("changed, then still") and moves on when it passes. See src/lib/autoCheck.ts.
+  const autoMode = useAutoMode();
+  const watch = useRef(newWatch(0));
+  const [autoStatus, setAutoStatus] = useState<string | null>(null); // what Auto Mode is doing, in the step card
+  const currentKey = useRef(stepKey);
 
   // Every page change shows the loading card first.
   const turnTo = useCallback((p: number) => {
@@ -506,14 +577,27 @@ export default function BuildView() {
     [phase.kind, doc, stepIdx, steps.length, page, turnTo],
   );
 
-  const runCheck = useCallback(async () => {
-    if (!step || !target || check?.state === "checking") return;
+  // Checks the build against this step's manual picture. Asked for (button, Space/Enter, voice "check"): always
+  // shows and speaks the result, as before. Automatic (Auto Mode): quiet unless it passes or finds a likely mistake.
+  // Either way a pass (isPass) starts a cancellable move to the next step.
+  const runCheck = useCallback(async (automatic = false): Promise<CheckResult | null> => {
+    if (!step || !target || check?.state === "checking") return null;
     const frame = camera.current?.capture();
     const sample = camera.current?.sample() ?? null; // the view at check time, to tell if the camera moves after
-    if (!frame) return setCheck({ state: "error", message: "Camera isn't ready yet." });
-    if (advance.current) clearTimeout(advance.current);
+    if (!frame) {
+      if (!automatic) setCheck({ state: "error", message: "Camera isn't ready yet." });
+      return null;
+    }
+    if (!automatic) {
+      // Pressing Check resumes a paused Auto Mode, and Auto Mode won't re-send the scene just checked.
+      const fine = camera.current?.sampleFine();
+      if (fine) markChecked(watch.current, fine, Date.now());
+      watch.current.misses = 0;
+      watch.current.notYet = 0;
+    }
     const seq = ++checkSeq.current;
-    setCheck({ state: "checking" });
+    setAdvance(null);
+    setCheck({ state: "checking", auto: automatic });
     setIssuePick(null);
     try {
       const res = await fetch("/api/check", {
@@ -522,24 +606,60 @@ export default function BuildView() {
         body: JSON.stringify({ frame, expected: target, previous: previous ?? undefined, instruction: step.instruction, watchFor: step.watchFor, parts: partLines(step.parts) }),
       });
       const data = await res.json();
-      if (seq !== checkSeq.current) return; // the step changed or a newer check started
+      if (seq !== checkSeq.current) return null; // the step changed or a newer check started
       if (!res.ok) throw new Error(data.error);
       const result = data as CheckResult;
-      setCheck({ state: "result", result, frame, id: seq, sample });
-      // A mistake is said with where it is ("The red 2x4 near the top left is rotated."), since the builder's eyes
-      // are on the bricks; everything else says Claude's own sentence, as before.
-      const spoken = checkVerdict(result) === "fix" ? spokenIssues(result.issues) : result.say;
-      if (!muted && spoken) speak(spoken);
-      if (result.step_complete && result.confidence >= 0.7) {
-        advance.current = setTimeout(() => {
-          if (seq === checkSeq.current) go(1);
-        }, 1800);
+      const verdict = checkVerdict(result);
+      const pass = isPass(result);
+      const loud = !automatic || pass || (verdict === "fix" && result.confidence >= AUTO_SPEAK_FIX_CONFIDENCE);
+      voiceDone.current = Promise.resolve();
+      if (loud) {
+        setCheck({ state: "result", result, frame, id: seq, sample });
+        // A mistake is said with where it is ("The red 2x4 near the top left is rotated."), since the builder's eyes
+        // are on the bricks; everything else says Claude's own sentence, as before.
+        const spoken = verdict === "fix" ? spokenIssues(result.issues) : result.say;
+        if (!muted && spoken) voiceDone.current = speaker().say(spoken);
+      } else {
+        setCheckState(null);
       }
+      if (pass) setAdvance({ id: seq, delay: automatic ? AUTO_ADVANCE_MS : MANUAL_ADVANCE_MS, waitForVoice: automatic, started: false });
+      return result;
     } catch (e) {
-      if (seq !== checkSeq.current) return;
-      setCheck({ state: "error", message: e instanceof Error && e.message ? e.message : "Check failed." });
+      if (seq !== checkSeq.current) return null;
+      if (automatic) setCheckState(null);
+      else setCheck({ state: "error", message: e instanceof Error && e.message ? e.message : "Check failed." });
+      return null;
     }
-  }, [step, target, previous, check?.state, muted, go, setCheck]);
+  }, [step, target, previous, check?.state, muted, setCheck]);
+
+  // The pending move to the next step. Auto Mode waits for the "verified" line to finish (the mic is off while it
+  // speaks), then gives 3 s to cancel: the Cancel button, saying "stop"/"cancel"/"wait", Back or Escape. A manual check
+  // moves on 1.8 s after the result, as before. It belongs to the check result on screen, so a step change, a new check
+  // or dismissing the result drops it; checkSeq is checked again before moving, so it can never skip an extra step.
+  const pending = advance && phase.kind === "ready" && check?.state === "result" && check.id === advance.id ? advance : null;
+  const pendingId = pending?.id;
+  const pendingDelay = pending?.delay ?? 0;
+  const pendingWaits = pending?.waitForVoice ?? false;
+  const goNext = useRef(go);
+  useEffect(() => {
+    goNext.current = go;
+  });
+  useEffect(() => {
+    if (pendingId == null) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    (pendingWaits ? voiceDone.current : Promise.resolve()).then(() => {
+      if (cancelled) return;
+      setAdvance((a) => (a?.id === pendingId ? { ...a, started: true } : a));
+      timer = setTimeout(() => {
+        if (pendingId === checkSeq.current) goNext.current(1);
+      }, pendingDelay);
+    });
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [pendingId, pendingDelay, pendingWaits]);
 
   const speakStep = useCallback(() => {
     if (step && !muted) speak(spokenStep(step));
@@ -767,7 +887,9 @@ export default function BuildView() {
   // A new step drops any check still running and a pending auto-advance (the old result hides itself: see `check`).
   useEffect(() => {
     checkSeq.current++;
-    if (advance.current) clearTimeout(advance.current);
+    // Auto Mode starts each step fresh: new "before" scene, no misses.
+    currentKey.current = stepKey;
+    resetForStep(watch.current);
   }, [stepKey]);
 
   // Step changes the builder made (Next, Back, voice, tapping) hold off automatic jumps for a while.
@@ -780,17 +902,70 @@ export default function BuildView() {
   // Automatic detection. Watches a tiny grayscale camera sample on the phone (no network). Once the whole
   // book is read it checks once, then again whenever the build has changed and the scene has held still for
   // 1.5 s (hands out of the way). At most every 20 s, and not within 20 s of the builder changing step.
-  const autoState = useRef<{ ready: boolean; busy: boolean; findMyPlace: (automatic?: boolean) => void }>({ ready: false, busy: false, findMyPlace: () => {} });
+  //
+  // Auto Mode shares this loop: while it's on and the step's picture is ready, the "changed, then still" moment runs the
+  // cheap step check (3 images) instead of "where am I" (up to 8 contact sheets). "Where am I" then only runs after 2
+  // "not done yet" results in a row, in case the builder skipped ahead. Unlike "where am I", Auto Mode keeps watching
+  // while a mistake is on screen, so it notices when the builder fixes it.
+  type AutoState = {
+    ready: boolean;
+    busy: boolean;
+    checking: boolean;
+    findMyPlace: (automatic?: boolean) => void;
+    autoMode: boolean;
+    canCheck: boolean;
+    pending: boolean;
+    runCheck: (automatic?: boolean) => Promise<CheckResult | null>;
+  };
+  const autoState = useRef<AutoState>({
+    ready: false, busy: false, checking: false, findMyPlace: () => {}, autoMode: false, canCheck: false, pending: false, runCheck: async () => null,
+  });
   useEffect(() => {
     // A mistake on screen pauses it too, so it doesn't jump away while the builder is fixing it.
     const reviewing = check?.state === "result" && check.result.issues.length > 0;
-    autoState.current = { ready, busy: locating || check?.state === "checking" || reviewing, findMyPlace };
+    autoState.current = {
+      ready,
+      busy: locating || check?.state === "checking" || reviewing,
+      checking: locating || check?.state === "checking",
+      findMyPlace,
+      autoMode,
+      canCheck: !!step && !!target && targetKey === stepKey,
+      pending: !!pending,
+      runCheck,
+    };
   });
   useEffect(() => {
     if (!reader || !doc) return;
     let prev: Uint8ClampedArray | null = null;
     let stillSince = Date.now();
     const timer = setInterval(() => {
+      const st = autoState.current;
+      if (st.autoMode && st.canCheck) {
+        const fine = camera.current?.sampleFine();
+        if (!fine) return;
+        const now = Date.now();
+        const w = watch.current;
+        const t = tick(w, fine, now, !st.ready || st.checking || st.pending || speaker().speaking);
+        // For tuning under the venue lights: how much the table differs from the last checked scene.
+        console.log(
+          `[auto] change ${t.change == null ? "—" : (t.change * 100).toFixed(1) + "%"} (needs ${(AUTO_CHANGE_THRESHOLD * 100).toFixed(1)}%)` +
+            ` · motion ${(t.motion * 100).toFixed(1)}% · still ${(t.stillMs / 1000).toFixed(1)}s · ${t.reason}`,
+        );
+        // A miss stays on the status line until the scene moves again.
+        if (w.misses >= AUTO_MAX_MISSES) setAutoStatus(`Auto · paused after ${AUTO_MAX_MISSES} tries · press Check`);
+        else if (!st.checking && !st.pending && (w.misses === 0 || t.reason === "moving")) setAutoStatus("Auto · watching");
+        if (!t.check) return;
+        markChecked(w, fine, now);
+        setAutoStatus("Auto · checking…");
+        const key = currentKey.current;
+        st.runCheck(true).then((r) => {
+          if (currentKey.current !== key || (r && isPass(r))) return; // moved on meanwhile, or passed
+          const verdict = r ? checkVerdict(r) : "unsure";
+          setAutoStatus(verdict === "notyet" ? "Auto · not done yet" : verdict === "fix" ? "Auto · needs a fix" : "Auto · need a better look");
+          if (recordMiss(w, verdict) && reader.count() >= doc.numPages) autoState.current.findMyPlace(true);
+        });
+        return;
+      }
       const sample = camera.current?.sample();
       if (!sample) return;
       const now = Date.now();
@@ -801,8 +976,7 @@ export default function BuildView() {
         return;
       }
       if (now - stillSince < 1500) return;
-      const st = autoState.current;
-      if (!st.ready || st.busy || speaker().speaking || reader.count() < doc.numPages) return;
+      if (!st.ready || st.busy || st.pending || speaker().speaking || reader.count() < doc.numPages) return;
       if (firstAutoDone.current) {
         if (now - lastAuto.current < 20000 || now - lastManual.current < 20000) return;
         if (baseline.current && changed(baseline.current, sample) < 0.04) return; // nothing new on the table
@@ -846,7 +1020,15 @@ export default function BuildView() {
       if (!c) return null;
       if (c.kind === "stop") {
         stopSpeaking();
+        if (pending) {
+          setAdvance(null);
+          return "Staying on this step.";
+        }
         return "Stopped.";
+      }
+      if (c.kind === "auto") {
+        setAutoModeStored(c.on);
+        return c.on ? "Auto Mode on: I'll check each step when you finish it." : "Auto Mode off.";
       }
       if (phase.kind === "loading") return "One moment, still loading.";
       switch (c.kind) {
@@ -871,13 +1053,15 @@ export default function BuildView() {
           return "Finding your place…";
       }
     },
-    [phase.kind, go, step, speakStep, runCheck, goToStep, findMyPlace],
+    [phase.kind, go, step, speakStep, runCheck, goToStep, findMyPlace, pending],
   );
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (zoomOpen || photoOpen) return; // the zoom viewer handles its own keys
       if (e.target instanceof HTMLElement && e.target.closest("button, input, textarea")) return; // a focused button handles its own Enter/Space
+      if (e.key === "a" || e.key === "A") setAutoModeStored(!readAutoMode());
+      if (e.key === "Escape") setAdvance(null);
       if (e.key === "ArrowRight") go(1);
       if (e.key === "ArrowLeft") go(-1);
       if (e.key === " " || e.key === "Enter") {
@@ -943,7 +1127,7 @@ export default function BuildView() {
 
       {/* reticle: shows while a check is running */}
       <AnimatePresence>
-        {check?.state === "checking" && (
+        {check?.state === "checking" && !check.auto && (
           <motion.div initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} className="pointer-events-none absolute left-1/2 top-[42%] z-10 -translate-x-1/2 -translate-y-1/2">
             <svg viewBox="0 0 200 200" className="h-56 w-56">
               <g className="spin-fast" style={{ transformBox: "fill-box" }}>
@@ -1047,6 +1231,41 @@ export default function BuildView() {
             </motion.div>
           )}
         </AnimatePresence>
+        {/* a pass: moving to the next step, with a chance to cancel */}
+        <AnimatePresence>
+          {pending && (
+            <motion.div
+              key={`advance-${pending.id}`}
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 8 }}
+              role="status"
+              className="hud-panel overflow-hidden rounded-2xl border border-emerald-400/40 !bg-ink/95 text-sm text-emerald-100"
+            >
+              <div className="flex items-center gap-3 px-4 py-3">
+                <p className="min-w-0 flex-1">
+                  <span className="font-semibold">Verified</span>
+                  <span className="text-emerald-100/70"> · {pending.started ? `next step in ${Math.round(pending.delay / 1000)} s` : "next step after this"}</span>
+                </p>
+                <button
+                  onClick={() => setAdvance(null)}
+                  className="shrink-0 rounded-lg border border-white/20 bg-white/[0.08] px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-white/15 active:scale-95"
+                >
+                  Cancel
+                </button>
+              </div>
+              {pending.started && (
+                <motion.div
+                  className="h-1 origin-left bg-emerald-300/80"
+                  initial={{ scaleX: 1 }}
+                  animate={{ scaleX: 0 }}
+                  transition={{ duration: pending.delay / 1000, ease: "linear" }}
+                />
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {phase.kind === "ready" && part && !compact && !roomForResult && (
           // On phones the manual panel sits top right (about 9rem wide), so keep the holograms left of it.
           <div className="flex items-end justify-start gap-3 pr-[10rem] sm:pr-0">
@@ -1130,8 +1349,9 @@ export default function BuildView() {
                   </p>
                   <p className="truncate text-sm font-medium">{step.instruction}</p>
                 </button>
+                <AutoToggle on={autoMode} small />
                 <button
-                  onClick={runCheck}
+                  onClick={() => runCheck()}
                   disabled={check?.state === "checking"}
                   className="shrink-0 rounded-xl bg-gradient-to-b from-sky-300 to-sky-500 px-4 py-2.5 text-sm font-semibold text-ink disabled:opacity-60"
                 >
@@ -1230,8 +1450,8 @@ export default function BuildView() {
                 <div className="flex items-baseline justify-between">
                   <p className="text-xs font-semibold text-sky-300">{stepLabel(step)}</p>
                   {/* the step is found from the camera automatically; while a check runs it says so here */}
-                  <p className={`text-[11px] ${locating ? "text-sky-300/80" : "text-white/40"}`} aria-live="polite">
-                    {locating ? "Checking where you are…" : `${stepIdx + 1}/${steps.length} on page ${page}`}
+                  <p className={`truncate pl-3 text-[11px] ${locating || autoMode ? "text-sky-300/80" : "text-white/40"}`} aria-live="polite">
+                    {locating ? "Checking where you are…" : autoMode ? (autoStatus ?? "Auto · watching") : `${stepIdx + 1}/${steps.length} on page ${page}`}
                   </p>
                 </div>
                 {/* the card stays put between steps; just the new instruction fades in */}
@@ -1372,7 +1592,7 @@ export default function BuildView() {
                               </ol>
                               <div className="mt-3 flex gap-2">
                                 <button
-                                  onClick={runCheck}
+                                  onClick={() => runCheck()}
                                   className="flex-1 rounded-lg bg-red-500 py-2 text-xs font-semibold text-white active:scale-[0.98]"
                                 >
                                   Check again
@@ -1396,13 +1616,16 @@ export default function BuildView() {
 
                 {/* Back / Next are gone: the step strip, voice ("next", "go to step 8") and auto-detect move between steps.
                     Phones hide it during a mistake review: "Check again" does the same and the photo needs the room. */}
+                <div className={`${isPhone && verdict === "fix" ? "hidden" : "flex"} mt-3 gap-2`}>
                 <button
-                  onClick={runCheck}
+                  onClick={() => runCheck()}
                   disabled={check?.state === "checking"}
-                  className={`${isPhone && verdict === "fix" ? "hidden" : ""} mt-3 w-full rounded-xl bg-gradient-to-b from-sky-300 to-sky-500 py-2.5 text-sm font-semibold text-ink shadow-[inset_0_1px_0_rgba(255,255,255,0.4),0_6px_20px_-6px_rgba(92,200,255,0.7)] transition hover:brightness-110 active:scale-[0.98] disabled:opacity-60`}
+                  className={`min-w-0 flex-1 rounded-xl bg-gradient-to-b from-sky-300 to-sky-500 py-2.5 text-sm font-semibold text-ink shadow-[inset_0_1px_0_rgba(255,255,255,0.4),0_6px_20px_-6px_rgba(92,200,255,0.7)] transition hover:brightness-110 active:scale-[0.98] disabled:opacity-60`}
                 >
                   {check?.state === "checking" ? "Checking…" : "Check build"}
                 </button>
+                <AutoToggle on={autoMode} />
+                </div>
               </>
             )}
           </motion.section>

@@ -156,10 +156,5 @@ export function decide(
 
 // ── 4. Watching for changes (for automatic detection) ───────────────────────
 
-/** Share of pixels that changed noticeably between two small grayscale samples (0–1). */
-export function changed(a: Uint8ClampedArray, b: Uint8ClampedArray, threshold = 28): number {
-  if (a.length !== b.length || !a.length) return 1;
-  let n = 0;
-  for (let i = 0; i < a.length; i++) if (Math.abs(a[i] - b[i]) > threshold) n++;
-  return n / a.length;
-}
+/** Share of pixels that changed between two small grayscale samples (shared with Auto Mode). */
+export { changed } from "@/lib/autoCheck";

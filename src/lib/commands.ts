@@ -3,7 +3,8 @@
 
 export type Command =
   | { kind: "next" | "back" | "repeat" | "check" | "stop" | "locate" }
-  | { kind: "goto"; step: number };
+  | { kind: "goto"; step: number }
+  | { kind: "auto"; on: boolean };
 
 const ONES: Record<string, number> = {
   zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
@@ -47,7 +48,8 @@ const FIXED: [Command["kind"], RegExp][] = [
     "check",
     /^(?:check|check it|check this|check that|check my build|check my work|is this right|is that right|is it right|did i do it right|did i do this right|did i do that right|done|im done|i am done|all done|finished|im finished|i am finished|i finished)$/,
   ],
-  ["stop", /^(?:stop|quiet|be quiet|stop talking|shh+|hush|silence)$/],
+  // also cancels a pending move to the next step
+  ["stop", /^(?:stop|quiet|be quiet|stop talking|shh+|hush|silence|cancel|wait|hold on|hold up)$/],
   // "where am I?": find the step from the camera (src/lib/whereAmI.ts)
   ["locate", /^(?:where am i|where was i|where are we|what step am i on|which step am i on|what step is this|which step is this|find my place|find where i am|figure out where i am|where am i at)$/],
 ];
@@ -62,11 +64,18 @@ const FINISHED = new RegExp(
   `^(?:i |ive |i have )?(?:just )?(?:finished|completed|did|done|im done with|i am done with|am done with|done with) steps? ${NUM}(?: (?:through|thru|to|and|until) ${NUM})?$`,
 );
 
+// Auto Mode: "auto mode on", "turn off auto mode", "auto on", "enable auto mode", "stop auto mode".
+const AUTO = "(?:auto|automatic|auto check|auto checking)(?: mode)?";
+const AUTO_ON = new RegExp(`^(?:(?:turn on|switch on|enable|start|use) ${AUTO}|(?:turn|switch) ${AUTO} on|${AUTO} on)$`);
+const AUTO_OFF = new RegExp(`^(?:(?:turn off|switch off|disable|stop|end|exit) ${AUTO}|(?:turn|switch) ${AUTO} off|${AUTO} off)$`);
+
 /** The command a whole spoken phrase asks for, or null if it's something else (send it to Claude). */
 export function matchCommand(text: string): Command | null {
   const t = normalize(text);
   if (!t) return null;
   for (const [kind, re] of FIXED) if (re.test(t)) return { kind } as Command;
+  if (AUTO_ON.test(t)) return { kind: "auto", on: true };
+  if (AUTO_OFF.test(t)) return { kind: "auto", on: false };
   for (const re of GOTO) {
     const m = t.match(re);
     const n = m && parseNumber(m[1]);
