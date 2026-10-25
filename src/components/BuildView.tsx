@@ -28,6 +28,19 @@ type Phase = { kind: "loading"; label: string } | { kind: "ready" } | { kind: "e
 type Check = { state: "checking" } | { state: "result"; result: CheckResult; frame: string } | { state: "error"; message: string };
 
 // Cuts a step's picture out of the rendered page (box is 0–1 of the page), with a little padding.
+// Scales an image data URL down to `height` px tall (small thumbnails for the step strip).
+async function shrink(src: string, height: number): Promise<string> {
+  const img = new Image();
+  img.src = src;
+  await img.decode();
+  const scale = Math.min(1, height / img.height);
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(img.width * scale));
+  canvas.height = Math.max(1, Math.round(img.height * scale));
+  canvas.getContext("2d")?.drawImage(img, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL("image/jpeg", 0.75);
+}
+
 async function crop(pageImage: string, box: ExtractedStep["box"], pad = 0.02): Promise<string> {
   const img = new Image();
   img.src = pageImage;
@@ -203,6 +216,7 @@ export default function BuildView() {
   const camera = useRef<CameraHandle>(null);
   const direction = useRef<1 | -1>(1);
   const landOn = useRef<number | null>(null); // step number the next page load opens at ("go to step 8")
+  const landIdx = useRef<number | null>(null); // exact step index the next page load opens at (step strip)
   const search = useRef(0); // bumped to cancel a running "go to step" search
 
   const [manual, setManual] = useState<Manual | null>(null);
@@ -316,8 +330,10 @@ export default function BuildView() {
         }
         setPageImage(image);
         setSteps(found);
-        const land = landOn.current == null ? -1 : found.findIndex((s) => s.number === landOn.current);
+        const land =
+          landIdx.current != null ? Math.min(landIdx.current, found.length - 1) : landOn.current == null ? -1 : found.findIndex((s) => s.number === landOn.current);
         landOn.current = null;
+        landIdx.current = null;
         setStepIdx(land >= 0 ? land : direction.current === 1 ? 0 : found.length - 1);
         setPhase({ kind: "ready" });
         saveManual({ ...manual, page, openedAt: Date.now() });
@@ -559,6 +575,52 @@ export default function BuildView() {
       turnTo(t.page);
     },
     [page, steps, turnTo],
+  );
+
+  // Step strip: every step read so far as a small thumbnail, in a sideways scroll inside the step card. Tap one to
+  // jump straight there. Fills in as the book is read in the background.
+  const stripItems = useMemo(
+    () => (reader ? reader.pages().flatMap((pg) => pg.steps.map((st, idx) => ({ page: pg.page, idx, step: st, image: pg.image }))) : []),
+    [reader, readCount], // eslint-disable-line react-hooks/exhaustive-deps -- re-list whenever more pages are read
+  );
+  const thumbsMade = useRef(new Set<string>()); // which thumbnails are made or being made
+  const [thumbs, setThumbs] = useState<Record<string, string>>({});
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      for (const item of stripItems) {
+        const key = `${item.page}-${item.idx}`;
+        if (thumbsMade.current.has(key)) continue;
+        thumbsMade.current.add(key);
+        const url = await crop(await item.image(), item.step.box)
+          .then((c) => shrink(c, 120))
+          .catch(() => "");
+        setThumbs((t) => ({ ...t, [key]: url }));
+        if (cancelled) return;
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [stripItems]);
+  const jumpToStep = useCallback(
+    (toPage: number, idx: number) => {
+      search.current++; // cancel any running "go to step" search
+      setCheck(null);
+      if (toPage === page) return setStepIdx(idx);
+      landIdx.current = idx;
+      direction.current = 1;
+      turnTo(toPage);
+    },
+    [page, turnTo],
+  );
+  // Centers the current step in the strip whenever it appears or the step changes (the step card re-mounts after
+  // a page load). Keyed to the step, so swiping the strip doesn't get pulled back on every re-render.
+  const centerCurrent = useCallback(
+    (el: HTMLButtonElement | null) => {
+      if (el) requestAnimationFrame(() => el.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" }));
+    },
+    [stepKey], // eslint-disable-line react-hooks/exhaustive-deps -- a new callback per step re-runs it
   );
 
   // "Where am I?": compares the camera with every step picture read so far. Jumps to the next step, or back to
@@ -865,10 +927,20 @@ export default function BuildView() {
                       className={`relative shrink-0 ${lots ? "h-20 w-20 sm:h-28 sm:w-28" : many ? "h-24 w-24 sm:h-32 sm:w-32" : "h-36 w-36 sm:h-48 sm:w-48"}`}
                     >
                       <PieceHologram state={h?.cut ? "ready" : "scanning"} cutout={h?.cut} size={h?.size} pieceKey={`${stepKey}-${i}`} />
+                      {h?.cut && (
+                        // How many to grab: big and bold, amber when it's more than one so it isn't missed.
+                        <span
+                          aria-hidden
+                          className={`absolute right-0 top-0 rounded-lg px-2 py-0.5 text-base font-extrabold leading-tight shadow-[0_2px_10px_rgba(0,0,0,0.5)] ${
+                            p.qty > 1 ? "bg-amber-300 text-ink" : "bg-white text-ink"
+                          }`}
+                        >
+                          ×{p.qty}
+                        </span>
+                      )}
                       {h?.cut && check?.state !== "checking" && (
                         <span className="absolute -bottom-3 left-1/2 flex max-w-full -translate-x-1/2 items-center gap-1 whitespace-nowrap text-[11px] font-medium text-sky-200/80">
-                          {many && <span className="rounded bg-sky-300 px-1 text-[9px] font-bold leading-[14px] text-ink">{i + 1}</span>}
-                          <span className="truncate">{many ? `×${p.qty}` : "Next part"}</span>
+                          {many ? <span className="rounded bg-sky-300 px-1 text-[9px] font-bold leading-[14px] text-ink">{i + 1}</span> : <span>Next part</span>}
                         </span>
                       )}
                     </div>
@@ -990,6 +1062,36 @@ export default function BuildView() {
 
             {phase.kind === "ready" && step && !compact && (
               <>
+                {stripItems.length > 1 && (
+                  <div
+                    aria-label="All steps"
+                    className="-mx-2 mb-3 flex snap-x gap-1.5 overflow-x-auto px-2 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                  >
+                    {stripItems.map((item) => {
+                      const key = `${item.page}-${item.idx}`;
+                      const current = item.page === page && item.idx === stepIdx;
+                      const thumb = thumbs[key];
+                      return (
+                        <button
+                          key={key}
+                          ref={current ? centerCurrent : undefined}
+                          onClick={() => jumpToStep(item.page, item.idx)}
+                          aria-current={current ? "step" : undefined}
+                          aria-label={`Go to step ${item.step.number}${item.step.sub ? `, part ${item.step.sub}` : ""}`}
+                          className={`relative h-11 w-14 shrink-0 snap-center overflow-hidden rounded-lg bg-white transition ${
+                            current ? "ring-2 ring-sky-300 ring-offset-2 ring-offset-ink" : "opacity-60 hover:opacity-100"
+                          }`}
+                        >
+                          {thumb ? <img src={thumb} alt="" className="h-full w-full object-contain" /> : <span className="absolute inset-0 animate-pulse bg-white/80" />}
+                          <span className={`absolute left-0 top-0 rounded-br px-1 text-[9px] font-bold leading-[13px] ${current ? "bg-sky-300 text-ink" : "bg-ink/80 text-white"}`}>
+                            {item.step.number}
+                            {item.step.sub ? `·${item.step.sub.split("/")[0]}` : ""}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
                 <div className="flex items-baseline justify-between">
                   <p className="text-xs font-semibold text-sky-300">{stepLabel(step)}</p>
                   <p className="text-[11px] text-white/40">
