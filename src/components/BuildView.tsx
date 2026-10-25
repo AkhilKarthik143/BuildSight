@@ -734,7 +734,13 @@ export default function BuildView() {
 
             {phase.kind === "loading" && (
               <div>
-                <p className="text-xs font-semibold text-sky-300">{phase.label}</p>
+                <p className="text-xs font-semibold text-sky-300">
+                  {phase.label}
+                  {doc && page > 0 && phase.label.startsWith("Reading page") ? ` of ${doc.numPages}` : ""}
+                </p>
+                {!compact && steps.length === 0 && page > 1 && (
+                  <p className="mt-1 text-[11px] text-white/50">Finding step 1: manuals often open with safety and parts pages, which I skip.</p>
+                )}
                 <div className="scan-bar mt-3 h-1 rounded-full" />
                 {compact ? null : preview ? (
                   <div className="relative mt-3 overflow-hidden rounded-xl bg-ink/60">
