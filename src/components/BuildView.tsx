@@ -38,7 +38,7 @@ async function crop(pageImage: string, box: ExtractedStep["box"], pad = 0.02): P
   canvas.width = Math.min(w, img.width - x);
   canvas.height = Math.min(h, img.height - y);
   canvas.getContext("2d")?.drawImage(img, x, y, canvas.width, canvas.height, 0, 0, canvas.width, canvas.height);
-  return canvas.toDataURL("image/jpeg", 0.85);
+  return canvas.toDataURL("image/jpeg", 0.75);
 }
 
 // Draws a light percentage grid on an image. Claude places boxes far more accurately with it.
@@ -68,7 +68,7 @@ async function withGrid(src: string): Promise<string> {
     g.fillText(String(i * 10), x + 2, 11);
     g.fillText(String(i * 10), 2, y - 2);
   }
-  return canvas.toDataURL("image/jpeg", 0.85);
+  return canvas.toDataURL("image/jpeg", 0.75);
 }
 
 // True on phone-width screens (Tailwind's `sm` breakpoint is 640px).
@@ -87,7 +87,7 @@ function useIsPhone() {
 
 // How many pages ahead to read in the background, and how many Claude calls may run at once.
 const LOOKAHEAD = 6;
-const MAX_PARALLEL = 6;
+const MAX_PARALLEL = 3; // uploads share the phone's connection; fewer at once keeps the current page fast
 // "Go to step n" searches this many pages each way in a manual that isn't pre-read (each unread page is a Claude call).
 const SEARCH_PAGES = 15;
 
@@ -118,7 +118,7 @@ function makeSource(m: Manual, prebuilt: Prebuilt | null, numPages: number, doc?
     render: (page) =>
       prebuilt?.pages[String(page)]?.length
         ? Promise.resolve(`/steps/${prebuilt.id}/${page}.jpg`)
-        : (pdf ??= openManualPdf(m)).then((d) => renderPage(d, page, 1200)),
+        : (pdf ??= openManualPdf(m)).then((d) => renderPage(d, page, 1000, 0.7)),
   };
 }
 
@@ -260,8 +260,8 @@ export default function BuildView() {
   useEffect(() => {
     if (!reader || !doc || !manual || page < 1) return;
     let cancelled = false;
+    const job = reader(page); // queue the current page before the read-ahead
     for (let k = 1; k <= LOOKAHEAD && page + k <= doc.numPages; k++) reader(page + k);
-    const job = reader(page);
     const knownEmpty = doc.prebuilt?.pages[String(page)]?.length === 0;
     if (!knownEmpty) job.image().then((img) => !cancelled && setPreview(img)).catch(() => {});
     job.steps

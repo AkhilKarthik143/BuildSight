@@ -39,7 +39,8 @@ export function openManualPdf(m: Manual): Promise<PDFDocumentProxy> {
 }
 
 // Renders one page (1-based) to a JPEG data URL no wider than maxWidth.
-export async function renderPage(doc: PDFDocumentProxy, pageNo: number, maxWidth = 1400): Promise<string> {
+// Pages are uploaded to Claude, so size matters on slow connections; line art stays legible at 0.7.
+export async function renderPage(doc: PDFDocumentProxy, pageNo: number, maxWidth = 1400, quality = 0.85): Promise<string> {
   const page = await doc.getPage(pageNo);
   const base = page.getViewport({ scale: 1 });
   const viewport = page.getViewport({ scale: maxWidth / base.width });
@@ -47,5 +48,5 @@ export async function renderPage(doc: PDFDocumentProxy, pageNo: number, maxWidth
   canvas.width = Math.round(viewport.width);
   canvas.height = Math.round(viewport.height);
   await page.render({ canvas, viewport }).promise;
-  return canvas.toDataURL("image/jpeg", 0.85);
+  return canvas.toDataURL("image/jpeg", quality);
 }

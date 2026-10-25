@@ -7,7 +7,7 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "re
 
 export type CameraHandle = { capture: () => string | null };
 
-const MAX_SIDE = 1024; // enough detail for bricks, small enough to send fast
+const MAX_SIDE = 896; // enough detail for bricks, small enough to upload fast on venue Wi-Fi
 
 const CameraFeed = forwardRef<CameraHandle>(function CameraFeed(_, ref) {
   const video = useRef<HTMLVideoElement>(null);
@@ -50,7 +50,7 @@ const CameraFeed = forwardRef<CameraHandle>(function CameraFeed(_, ref) {
       canvas.width = Math.round(v.videoWidth * scale);
       canvas.height = Math.round(v.videoHeight * scale);
       canvas.getContext("2d")?.drawImage(v, 0, 0, canvas.width, canvas.height);
-      return canvas.toDataURL("image/jpeg", 0.8);
+      return canvas.toDataURL("image/jpeg", 0.7);
     },
   }));
 
