@@ -16,3 +16,11 @@ az acr build -r <registry> -t buildsight:<tag> .
 az containerapp update -n buildsight -g calhacks-rg --image <registry>.azurecr.io/buildsight:<tag>
 ```
 Secrets are set once with `az containerapp secret set` and referenced as `secretref:` env vars.
+
+## Monitoring: Application Insights
+- Resource `buildsight-insights` (westus2, workspace-based on the Container Apps environment's Log Analytics workspace).
+- `src/instrumentation.ts` / `src/instrumentation.node.ts` start Azure Monitor OpenTelemetry **only when**
+  `APPLICATIONINSIGHTS_CONNECTION_STRING` is set (a Container App secret), so Vercel and local dev are unaffected.
+- Next.js's built-in spans become **requests** (`POST /api/check`, `GET /api/speech-token`, ...) and **dependencies**
+  (Claude `api.anthropic.com`, Cartesia `api.cartesia.ai`, Azure Speech token endpoint). Live Metrics is on.
+- `tracesPerSecond: 0`: the package's default (5 traces/s) silently drops request traces in bursts.
