@@ -172,3 +172,12 @@ The step card used to be keyed to the step, so every step change faded the whole
 - One card for all steps (keyed to the phase only); a step change updates it in place and just fades in the new instruction.
 - Jumps from the strip or from automatic step detection to a page that's already read go straight there, no loading card.
 - A strip that has just appeared jumps to the current step instead of sliding there.
+
+## Visual polish pass (CSS and copy only)
+A design review of the hub and the build screen found the accent spread over several blues and gradients, almost no keyboard focus styles, a landing-page-sized hub title, and phone header text that cut off the page number and the voice hint. Fixed with class and copy changes only; holograms, the camera overlay, the mistake boxes and all behavior are untouched.
+- One accent (`holo`, #5cc8ff) for accent text, chips, tabs and badges. One flat primary button (Search, Check build, Check, Retry, Start over) instead of gradients with a glow. One red for errors.
+- One keyboard focus ring for every control (`:focus-visible`, 2px `holo`), in the base layer so components can still override it.
+- Hub title solid white at 30/40px instead of 60px gradient text; the catalog starts higher.
+- Phones: the build header keeps "Page 5/68" visible (only the subtitle truncates), the voice status wraps to two lines instead of cutting off, the manual panel header reads "Step 1 · Zoom" on one line. Panel sizes and positions unchanged.
+- "System error" now reads "Something went wrong — try again".
+- Tag `demo-stable` marks the last commit before this pass.

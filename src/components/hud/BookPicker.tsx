@@ -33,7 +33,7 @@ export default function BookPicker({ item, onPick, onClose }: { item: CatalogIte
       >
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-xs font-medium text-sky-300">{item.source === "lego" ? `LEGO ${item.set}` : `IKEA ${item.itemNo}`}</p>
+            <p className="text-xs font-medium text-holo">{item.source === "lego" ? `LEGO ${item.set}` : `IKEA ${item.itemNo}`}</p>
             <h2 className="mt-0.5 text-lg font-semibold tracking-tight">{item.name}</h2>
             <p className="text-sm text-white/50">
               {item.source === "lego" && item.category === "Creator"
@@ -52,7 +52,7 @@ export default function BookPicker({ item, onPick, onClose }: { item: CatalogIte
             <button
               key={m.pdfPath}
               onClick={() => onPick(m)}
-              className="group overflow-hidden rounded-xl border border-white/10 bg-white/[0.03] text-left transition hover:border-sky-300/40"
+              className="group overflow-hidden rounded-xl border border-white/10 bg-white/[0.03] text-left transition hover:border-holo/40"
             >
               <div className="relative aspect-square bg-white/[0.03]">
                 <ProductImage src={m.coverUrl ?? item.image} sizes="160px" padded={false} className="group-hover:scale-105" />

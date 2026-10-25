@@ -141,12 +141,12 @@ export default function Hub() {
 
       <main className="relative z-10 mx-auto flex w-full max-w-6xl flex-col px-5 pb-24 sm:px-8">
         {/* hero + search */}
-        <section className="flex flex-col items-center pt-12 text-center sm:pt-20">
+        <section className="flex flex-col items-center pt-8 text-center sm:pt-14">
           <motion.h1
             initial={{ opacity: 0, y: 12, filter: "blur(8px)" }}
             animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
             transition={{ duration: 0.6 }}
-            className="text-sheen text-[2.4rem] font-semibold leading-[1.05] tracking-[-0.035em] sm:text-6xl"
+            className="text-[1.875rem] font-semibold leading-[1.1] tracking-[-0.03em] text-white sm:text-[2.5rem]"
           >
             What are we building?
           </motion.h1>
@@ -161,7 +161,7 @@ export default function Hub() {
               // Catalog filters as you type; Enter also searches LEGO/IKEA live for anything not listed.
               liveSearch(query);
             }}
-            className="hud-panel holo-glow mt-8 flex w-full max-w-2xl items-center gap-3 rounded-2xl p-2 pl-5 transition focus-within:border-sky-300/40"
+            className="hud-panel holo-glow mt-6 flex w-full max-w-2xl items-center gap-3 rounded-2xl p-2 pl-5 transition focus-within:border-holo/60"
           >
             <svg viewBox="0 0 24 24" className="h-5 w-5 shrink-0 text-white/40" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="11" cy="11" r="7" />
@@ -181,7 +181,7 @@ export default function Hub() {
               <button
                 type="submit"
                 disabled={searching != null}
-                className="shrink-0 rounded-xl bg-gradient-to-b from-sky-300 to-sky-500 px-5 py-3 text-sm font-semibold text-ink shadow-[inset_0_1px_0_rgba(255,255,255,0.4),0_6px_20px_-6px_rgba(92,200,255,0.7)] transition hover:brightness-110 active:scale-95 disabled:opacity-60"
+                className="shrink-0 rounded-xl px-5 py-3 text-sm bg-holo font-semibold text-ink transition hover:brightness-110 active:scale-[0.98] disabled:opacity-60"
               >
                 {searching ? "Searching…" : "Search"}
               </button>
@@ -191,9 +191,9 @@ export default function Hub() {
           {inProgress && (
             <button
               onClick={() => router.push(`/build/${inProgress.id}`)}
-              className="mt-4 flex items-center gap-2 rounded-full border border-sky-300/25 bg-sky-300/10 px-4 py-1.5 text-xs text-sky-100 transition hover:bg-sky-300/20"
+              className="mt-4 flex items-center gap-2 rounded-full border border-holo/25 bg-holo/10 px-4 py-1.5 text-xs text-white transition hover:bg-holo/20"
             >
-              <span className="h-1.5 w-1.5 rounded-full bg-sky-300" />
+              <span className="h-1.5 w-1.5 rounded-full bg-holo" />
               Continue {inProgress.title} · page {inProgress.page}
               <span aria-hidden>→</span>
             </button>
@@ -201,7 +201,7 @@ export default function Hub() {
         </section>
 
         {/* tabs: a frosted bar only once pinned to the top */}
-        <div ref={tabsSentinel} aria-hidden className="mt-10 h-px" />
+        <div ref={tabsSentinel} aria-hidden className="mt-8 h-px" />
         <nav
           className={`sticky top-0 z-20 -mx-5 px-5 pb-3 pt-3 transition-colors duration-300 sm:-mx-8 sm:px-8 ${
             pinned ? "border-b border-white/[0.06] bg-ink/85 backdrop-blur-xl" : "bg-transparent"
@@ -216,7 +216,7 @@ export default function Hub() {
               >
                 {t.label}
                 {t.count != null && t.count > 0 && <span className="rounded-full bg-white/[0.07] px-1.5 text-[11px] text-white/50">{t.count}</span>}
-                {tab === t.id && <motion.span layoutId="tab-underline" className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-sky-300" />}
+                {tab === t.id && <motion.span layoutId="tab-underline" className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-holo" />}
               </button>
             ))}
           </div>
@@ -228,7 +228,7 @@ export default function Hub() {
                   key={c}
                   onClick={() => setCategory(c)}
                   className={`shrink-0 rounded-full border px-3 py-1.5 text-xs transition ${
-                    category === c ? "border-sky-300/50 bg-sky-300/15 text-white" : "border-white/10 bg-white/[0.03] text-white/60 hover:text-white"
+                    category === c ? "border-holo/50 bg-holo/15 text-white" : "border-white/10 bg-white/[0.03] text-white/60 hover:text-white"
                   }`}
                 >
                   {c}
@@ -238,7 +238,7 @@ export default function Hub() {
           )}
         </nav>
 
-        {error && <p className="mt-4 text-sm text-rose-300">{error}</p>}
+        {error && <p className="mt-4 text-sm text-red-300">{error}</p>}
 
         {/* live search results (anything not in the catalog) */}
         <AnimatePresence>
@@ -295,9 +295,9 @@ export default function Hub() {
           <section className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <button
               onClick={() => fileInput.current?.click()}
-              className="flex min-h-56 flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-white/15 bg-white/[0.02] p-6 text-center transition hover:border-sky-300/50 hover:bg-sky-300/5"
+              className="flex min-h-56 flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-white/15 bg-white/[0.02] p-6 text-center transition hover:border-holo/50 hover:bg-holo/5"
             >
-              <span className="grid h-12 w-12 place-items-center rounded-2xl bg-sky-300/10 text-sky-300 ring-1 ring-sky-300/20">
+              <span className="grid h-12 w-12 place-items-center rounded-2xl bg-holo/10 text-holo ring-1 ring-holo/20">
                 <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M12 16V4m0 0-4 4m4-4 4 4M4 20h16" />
                 </svg>

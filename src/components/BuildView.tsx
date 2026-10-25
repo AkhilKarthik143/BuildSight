@@ -1227,15 +1227,16 @@ export default function BuildView() {
 
       {/* top bar */}
       <header className="absolute inset-x-0 top-0 z-20 flex items-center justify-between gap-3 px-4 pt-[max(0.75rem,env(safe-area-inset-top))] sm:px-6">
-        <Link href="/" className="hud-panel flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-medium text-white/85 transition hover:text-white">
+        <Link href="/" className="hud-panel flex h-9 items-center gap-1.5 rounded-xl px-3 text-sm font-medium text-white/85 transition hover:text-white">
           ← Hub
         </Link>
         <div className="min-w-0 flex-1 text-center">
           <p className="truncate text-[15px] font-semibold tracking-tight">{manual?.title ?? "BuildSight"}</p>
-          <p className="truncate text-[11px] text-white/50">
-            {manual?.subtitle}
-            {doc && page > 0 ? ` · Page ${page}/${doc.numPages}` : ""}
-            {doc && readCount > 0 && readCount < doc.numPages ? ` · read ${readCount}/${doc.numPages}` : ""}
+          {/* the page number never gets cut off: only the subtitle truncates */}
+          <p className="flex justify-center whitespace-nowrap text-[11px] text-white/50">
+            <span className="min-w-0 truncate">{manual?.subtitle}</span>
+            {doc && page > 0 && <span className="shrink-0 pl-1">{manual?.subtitle ? "· " : ""}Page {page}/{doc.numPages}</span>}
+            {doc && readCount > 0 && readCount < doc.numPages && <span className="hidden shrink-0 sm:inline"> · read {readCount}/{doc.numPages}</span>}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -1256,7 +1257,7 @@ export default function BuildView() {
             setMuted((m) => !m);
             stopSpeaking();
           }}
-          className="hud-panel rounded-xl px-3 py-2 text-xs font-medium text-white/85"
+          className="hud-panel h-9 rounded-xl px-3 text-xs font-medium text-white/85 transition hover:text-white"
           aria-pressed={muted}
         >
           {muted ? "Voice off" : "Voice on"}
@@ -1478,7 +1479,7 @@ export default function BuildView() {
             {compact && phase.kind === "ready" && step && (
               <div className="flex items-center gap-3">
                 <button onClick={() => setSheetOpen(true)} className="min-w-0 flex-1 text-left">
-                  <p className="text-[11px] font-semibold text-sky-300">
+                  <p className="text-[11px] font-semibold text-holo">
                     {stepLabel(step)}
                     {check?.state === "result" && (
                       <span className={verdict === "pass" ? "text-emerald-300" : verdict === "fix" ? "text-red-300" : "text-white/50"}>
@@ -1493,7 +1494,7 @@ export default function BuildView() {
                 <button
                   onClick={() => runCheck()}
                   disabled={check?.state === "checking"}
-                  className="shrink-0 rounded-xl bg-gradient-to-b from-sky-300 to-sky-500 px-4 py-2.5 text-sm font-semibold text-ink disabled:opacity-60"
+                  className="shrink-0 rounded-xl px-4 py-2.5 text-sm bg-holo font-semibold text-ink transition hover:brightness-110 active:scale-[0.98] disabled:opacity-60"
                 >
                   {check?.state === "checking" ? "…" : "Check"}
                 </button>
@@ -1502,7 +1503,7 @@ export default function BuildView() {
 
             {phase.kind === "loading" && (
               <div>
-                <p className="text-xs font-semibold text-sky-300">
+                <p className="text-xs font-semibold text-holo">
                   {phase.label}
                   {doc && page > 0 && phase.label.startsWith("Reading page") ? ` of ${doc.numPages}` : ""}
                 </p>
@@ -1523,7 +1524,7 @@ export default function BuildView() {
 
             {phase.kind === "error" && (
               <div>
-                <p className="text-xs font-semibold text-rose-300">System error</p>
+                <p className="text-xs font-semibold text-red-300">Something went wrong — try again</p>
                 <p className="mt-2 text-sm text-white/80">{phase.message}</p>
                 <div className="mt-4 flex gap-2">
                   <Link href="/" className="rounded-xl border border-white/15 px-4 py-2.5 text-sm">Back to hub</Link>
@@ -1533,7 +1534,7 @@ export default function BuildView() {
                         setPhase({ kind: "loading", label: `Reading page ${page}` });
                         setAttempt((a) => a + 1);
                       }}
-                      className="rounded-xl bg-holo px-4 py-2.5 text-sm font-semibold text-ink"
+                      className="rounded-xl px-4 py-2.5 text-sm bg-holo font-semibold text-ink transition hover:brightness-110 active:scale-[0.98] disabled:opacity-60"
                     >
                       Retry
                     </button>
@@ -1547,7 +1548,7 @@ export default function BuildView() {
                 <p className="text-xs font-semibold text-emerald-300">Build complete</p>
                 <p className="mt-2 text-2xl font-semibold tracking-tight">That&apos;s the last step in this manual.</p>
                 <div className="mt-4 flex gap-2">
-                  <button onClick={() => restart(false)} className="rounded-xl bg-holo px-4 py-2.5 text-sm font-semibold text-ink">
+                  <button onClick={() => restart(false)} className="rounded-xl px-4 py-2.5 text-sm bg-holo font-semibold text-ink transition hover:brightness-110 active:scale-[0.98] disabled:opacity-60">
                     Start over
                   </button>
                   <Link href="/" className="rounded-xl border border-white/15 px-4 py-2.5 text-sm">Back to hub</Link>
@@ -1574,11 +1575,11 @@ export default function BuildView() {
                           aria-current={current ? "step" : undefined}
                           aria-label={`Go to step ${item.step.number}${item.step.sub ? `, part ${item.step.sub}` : ""}`}
                           className={`relative h-10 w-14 shrink-0 snap-center overflow-hidden rounded-lg bg-white transition ${
-                            current ? "ring-2 ring-sky-300 ring-offset-2 ring-offset-ink" : "opacity-60 hover:opacity-100"
+                            current ? "ring-2 ring-holo ring-offset-2 ring-offset-ink" : "opacity-60 hover:opacity-100"
                           }`}
                         >
                           {thumb ? <img src={thumb} alt="" className="h-full w-full object-contain" /> : <span className="absolute inset-0 animate-pulse bg-white/80" />}
-                          <span className={`absolute left-0 top-0 rounded-br px-1 text-[9px] font-bold leading-[13px] ${current ? "bg-sky-300 text-ink" : "bg-ink/80 text-white"}`}>
+                          <span className={`absolute left-0 top-0 rounded-br px-1 text-[9px] font-bold leading-[13px] ${current ? "bg-holo text-ink" : "bg-ink/80 text-white"}`}>
                             {item.step.number}
                             {item.step.sub ? `·${item.step.sub.split("/")[0]}` : ""}
                           </span>
@@ -1588,9 +1589,9 @@ export default function BuildView() {
                   </div>
                 )}
                 <div className="flex items-baseline justify-between">
-                  <p className="text-xs font-semibold text-sky-300">{stepLabel(step)}</p>
+                  <p className="text-xs font-semibold text-holo">{stepLabel(step)}</p>
                   {/* the step is found from the camera automatically; while a check runs it says so here */}
-                  <p className={`truncate pl-3 text-[11px] ${locating || autoMode ? "text-sky-300/80" : "text-white/40"}`} aria-live="polite">
+                  <p className={`truncate pl-3 text-[11px] ${locating || autoMode ? "text-holo/80" : "text-white/40"}`} aria-live="polite">
                     {locating ? "Checking where you are…" : autoMode ? (autoStatus ?? "Auto · watching") : `${stepIdx + 1}/${steps.length} on page ${page}`}
                   </p>
                 </div>
@@ -1612,10 +1613,10 @@ export default function BuildView() {
                       initial={{ opacity: 0, height: 0 }}
                       animate={{ opacity: 1, height: "auto" }}
                       exit={{ opacity: 0, height: 0 }}
-                      className="mt-2 overflow-hidden rounded-xl border border-sky-300/25 bg-sky-300/[0.06] px-3 py-2"
+                      className="mt-2 overflow-hidden rounded-xl border border-holo/25 bg-holo/[0.06] px-3 py-2"
                     >
                       <div className="flex items-center justify-between">
-                        <p className="text-[11px] font-semibold text-sky-300">Smaller steps</p>
+                        <p className="text-[11px] font-semibold text-holo">Smaller steps</p>
                         <button onClick={() => setSubsteps(null)} aria-label="Hide smaller steps" className="px-1 text-xs text-white/40 hover:text-white/80">
                           ✕
                         </button>
@@ -1760,7 +1761,7 @@ export default function BuildView() {
                 <button
                   onClick={() => runCheck()}
                   disabled={check?.state === "checking"}
-                  className={`min-w-0 flex-1 rounded-xl bg-gradient-to-b from-sky-300 to-sky-500 py-2.5 text-sm font-semibold text-ink shadow-[inset_0_1px_0_rgba(255,255,255,0.4),0_6px_20px_-6px_rgba(92,200,255,0.7)] transition hover:brightness-110 active:scale-[0.98] disabled:opacity-60`}
+                  className="min-w-0 flex-1 rounded-xl py-2.5 text-sm bg-holo font-semibold text-ink transition hover:brightness-110 active:scale-[0.98] disabled:opacity-60"
                 >
                   {check?.state === "checking" ? "Checking…" : "Check build"}
                 </button>

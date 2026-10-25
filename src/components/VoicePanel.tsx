@@ -258,7 +258,7 @@ export default function VoicePanel({ getFrame, context, muted, compact, onComman
           <span className={`absolute right-1 top-1 h-2.5 w-2.5 rounded-full ${STATUS_DOT[status]}`} />
         </button>
         {(status !== "idle" || error) && (
-          <p className={`hud-panel line-clamp-2 rounded-xl px-2.5 py-1.5 text-xs ${error ? "text-rose-100" : "text-white/80"}`}>
+          <p className={`hud-panel line-clamp-2 rounded-xl px-2.5 py-1.5 text-xs ${error ? "text-red-100" : "text-white/80"}`}>
             {error ?? (last || statusLine)}
           </p>
         )}
@@ -283,7 +283,7 @@ export default function VoicePanel({ getFrame, context, muted, compact, onComman
         </button>
         <button
           onClick={() => setPinned((p) => !p)}
-          className={`min-w-0 flex-1 truncate text-left text-[13px] ${status === "listening" && interim ? "italic text-white/70" : "text-white/85"}`}
+          className={`min-w-0 flex-1 line-clamp-2 text-left text-[13px] leading-tight ${status === "listening" && interim ? "italic text-white/70" : "text-white/85"}`}
           title={pinned ? "Hide transcript" : "Show transcript"}
         >
           {statusLine}
@@ -303,7 +303,7 @@ export default function VoicePanel({ getFrame, context, muted, compact, onComman
               {l.text || <span className="animate-pulse text-white/40">…</span>}
             </p>
           ))}
-          {error && <p className="rounded-lg border border-rose-400/30 bg-rose-400/10 px-2.5 py-1.5 text-xs text-rose-100">{error}</p>}
+          {error && <p className="rounded-lg border border-red-400/30 bg-red-400/10 px-2.5 py-1.5 text-xs text-red-100">{error}</p>}
         </div>
       )}
     </section>

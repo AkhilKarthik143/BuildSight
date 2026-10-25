@@ -21,6 +21,14 @@ body {
   background: rgba(92, 200, 255, 0.35);
 }
 
+/* Keyboard focus: one ring for every control. In the base layer so a component can still override it. */
+@layer base {
+  :where(a, button, input, select, textarea, summary, [role="button"], [tabindex]):focus-visible {
+    outline: 2px solid var(--color-holo);
+    outline-offset: 2px;
+  }
+}
+
 /* ---------- Backdrop ---------- */
 
 .hud-grid {
@@ -67,14 +75,6 @@ body {
 
 .holo-text {
   text-shadow: 0 0 24px rgba(92, 200, 255, 0.35);
-}
-
-/* Heading gradient */
-.text-sheen {
-  background: linear-gradient(180deg, #ffffff 30%, #a9dcff 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
 }
 
 /* Turns a manual picture (dark lines on white) into glowing cyan lines on nothing */
