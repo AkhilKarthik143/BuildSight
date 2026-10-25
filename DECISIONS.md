@@ -147,3 +147,12 @@ Every automatic "where am I?" check used to cut all step pictures out of their p
 - Contact sheets are kept and only redrawn when their tiles change.
 - The picture work yields between pages and before each JPEG encode, so frames keep coming.
 After: about 60 fps through the whole check, worst 5 s window 188 ms of blocked main thread.
+
+## Phones stay smooth while a book is read
+Reading a not-pre-read manual in the background made phones stutter for the whole read (measured at 4x CPU slowdown on a 61-page PDF: 13 fps, 3 s of every 5 s blocked). The biggest cost was JPEG encoding with `toDataURL`, which runs on the main thread, for every page, its grid copy and its step thumbnails.
+- `encodeCanvas` (`src/lib/encode.ts`) encodes with `toBlob` + FileReader instead: same data URLs, off the main thread.
+- Phones read one page at a time with a 250 ms rest; the screen re-lists read pages at most every 2 s instead of re-rendering per page.
+- Phones (coarse pointer) drop the frosted-glass blur on panels: over live video it's redone every frame, a GPU cost the test browser can't measure. Panels are a dark see-through fill instead.
+- The camera asks for 1280x720 instead of 1920x1080 (photos for Claude are at most 896 px).
+After: about 53 fps through the read, blocked time mostly 0.
+
