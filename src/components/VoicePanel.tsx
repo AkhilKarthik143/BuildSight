@@ -35,9 +35,12 @@ type Props = {
   context?: Pick<AssistRequest, "manual" | "step">;
   muted?: boolean; // BuildSight's voice is muted (the build screen's Voice on/off)
   compact?: boolean; // phones with the step card collapsed: just a round mic button
+  // Spoken build commands ("next", "go to step 8"): returns a short confirmation if it handled the phrase
+  // (then Claude isn't asked), or null to send it to Claude as a question.
+  onCommand?: (text: string) => string | null;
 };
 
-export default function VoicePanel({ getFrame, context, muted, compact }: Props) {
+export default function VoicePanel({ getFrame, context, muted, compact, onCommand }: Props) {
   const [status, setStatus] = useState<VoiceStatus>("idle");
   const [lines, setLines] = useState<Line[]>([]);
   const [interim, setInterim] = useState("");
@@ -53,8 +56,8 @@ export default function VoicePanel({ getFrame, context, muted, compact }: Props)
   const scroller = useRef<HTMLDivElement>(null);
   const linesRef = useRef<Line[]>([]);
   linesRef.current = lines;
-  const props = useRef({ getFrame, context, muted });
-  props.current = { getFrame, context, muted };
+  const props = useRef({ getFrame, context, muted, onCommand });
+  props.current = { getFrame, context, muted, onCommand };
   const asking = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -68,8 +71,14 @@ export default function VoicePanel({ getFrame, context, muted, compact }: Props)
         if (!liveRef.current || !l.listening) return;
         const text = await l.stop();
         setInterim("");
-        if (text) ask(text);
-        else setStatus("idle");
+        if (!text) return setStatus("idle");
+        // Commands act at once, no Claude call; the step change (if any) is read aloud by the build screen.
+        const handled = props.current.onCommand?.(text);
+        if (handled) {
+          setLines((ls) => [...ls, { who: "you", text }, { who: "assistant", text: handled }]);
+          setFaded(false);
+          setStatus(speaker().speaking ? "speaking" : "idle");
+        } else ask(text);
       },
       onError: (m) => {
         setError(m);

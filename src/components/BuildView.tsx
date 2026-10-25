@@ -14,6 +14,7 @@ import CameraFeed, { type CameraHandle } from "@/components/CameraFeed";
 import ManualPanel from "@/components/ManualPanel";
 import VoicePanel from "@/components/VoicePanel";
 import ZoomViewer from "@/components/ZoomViewer";
+import { matchCommand } from "@/lib/commands";
 import { getManual, getPageSteps, saveManual, savePageSteps, type Manual } from "@/lib/manuals";
 import { openManualPdf, renderPage } from "@/lib/pdf";
 import { loadPrebuilt, type Prebuilt } from "@/lib/prebuilt";
@@ -87,6 +88,8 @@ function useIsPhone() {
 // How many pages ahead to read in the background, and how many Claude calls may run at once.
 const LOOKAHEAD = 6;
 const MAX_PARALLEL = 6;
+// "Go to step n" searches this many pages each way in a manual that isn't pre-read (each unread page is a Claude call).
+const SEARCH_PAGES = 15;
 
 // Runs at most `n` tasks at a time; extra ones wait in line.
 function limiter(n: number) {
@@ -160,6 +163,8 @@ export default function BuildView() {
   const { id } = useParams<{ id: string }>();
   const camera = useRef<CameraHandle>(null);
   const direction = useRef<1 | -1>(1);
+  const landOn = useRef<number | null>(null); // step number the next page load opens at ("go to step 8")
+  const search = useRef(0); // bumped to cancel a running "go to step" search
 
   const [manual, setManual] = useState<Manual | null>(null);
   const [doc, setDoc] = useState<PageSource | null>(null);
@@ -272,7 +277,9 @@ export default function BuildView() {
         }
         setPageImage(image);
         setSteps(found);
-        setStepIdx(direction.current === 1 ? 0 : found.length - 1);
+        const land = landOn.current == null ? -1 : found.findIndex((s) => s.number === landOn.current);
+        landOn.current = null;
+        setStepIdx(land >= 0 ? land : direction.current === 1 ? 0 : found.length - 1);
         setPhase({ kind: "ready" });
         saveManual({ ...manual, page, openedAt: Date.now() });
       })
@@ -306,6 +313,7 @@ export default function BuildView() {
   const restart = useCallback(
     (ask = true) => {
       if (!doc || (ask && !window.confirm("Start over from step 1?"))) return;
+      search.current++;
       stopSpeaking();
       direction.current = 1;
       setSelection(null);
@@ -319,6 +327,7 @@ export default function BuildView() {
   const go = useCallback(
     (delta: 1 | -1) => {
       if (phase.kind !== "ready" || !doc) return;
+      search.current++;
       setCheck(null);
       direction.current = delta;
       const nextIdx = stepIdx + delta;
@@ -352,6 +361,85 @@ export default function BuildView() {
       setCheck({ state: "error", message: e instanceof Error && e.message ? e.message : "Check failed." });
     }
   }, [step, target, previous, check?.state, muted, go]);
+
+  const speakStep = useCallback(() => {
+    if (step && !muted) speak(`Step ${step.number}. ${step.instruction}`);
+  }, [step, muted]);
+
+  // Jumps to step n: on this page at once; otherwise reads pages ahead (then behind) until one has step n.
+  // Step numbers can repeat in a book (sub-builds restart at 1), so the nearest match wins.
+  const goToStep = useCallback(
+    async (n: number) => {
+      if (!doc || !reader || (phase.kind !== "ready" && phase.kind !== "done")) return;
+      const here = phase.kind === "ready" ? steps.findIndex((s) => s.number === n) : -1;
+      if (here >= 0) {
+        search.current++;
+        setCheck(null);
+        if (here === stepIdx) speakStep();
+        else setStepIdx(here);
+        return;
+      }
+      const id = ++search.current;
+      const reach = doc.prebuilt ? doc.numPages : SEARCH_PAGES; // pre-read books are free to search
+      const order: number[] = [];
+      for (let k = 1; k <= reach && page + k <= doc.numPages; k++) order.push(page + k);
+      for (let k = 1; k <= reach && page - k >= 1; k++) order.push(page - k);
+      const wasPhase = phase;
+      setCheck(null);
+      setPhase({ kind: "loading", label: `Finding step ${n}` });
+      for (let i = 0; i < order.length; i++) {
+        order.slice(i + 1, i + 3).forEach((p) => reader(p)); // read the next couple of pages meanwhile
+        const found = await reader(order[i]).steps.catch(() => [] as ExtractedStep[]);
+        if (search.current !== id) return; // cancelled (Next, Back, Restart, another jump)
+        if (found.some((s) => s.number === n)) {
+          landOn.current = n;
+          direction.current = 1;
+          setPhase({ kind: "loading", label: `Opening step ${n}` });
+          setPage(order[i]);
+          return;
+        }
+      }
+      if (search.current !== id) return;
+      setPhase(wasPhase);
+      const searchedAll = order.length >= doc.numPages - 1;
+      const message = searchedAll ? `I couldn't find step ${n} in this book.` : `I couldn't find step ${n} within ${SEARCH_PAGES} pages of this one.`;
+      setCheck({ state: "error", message });
+      if (!muted) speak(message);
+    },
+    [doc, reader, phase, steps, stepIdx, page, muted, speakStep],
+  );
+
+  // Spoken commands from the voice panel; returns what to show in the transcript, or null to ask Claude instead.
+  const onCommand = useCallback(
+    (text: string): string | null => {
+      const c = matchCommand(text);
+      if (!c) return null;
+      if (c.kind === "stop") {
+        stopSpeaking();
+        return "Stopped.";
+      }
+      if (phase.kind === "loading") return "One moment, still loading.";
+      switch (c.kind) {
+        case "next":
+          go(1);
+          return "Next step.";
+        case "back":
+          go(-1);
+          return "Previous step.";
+        case "repeat":
+          if (!step) return null;
+          speakStep();
+          return `Step ${step.number}. ${step.instruction}`;
+        case "check":
+          runCheck();
+          return "Checking your build…";
+        case "goto":
+          goToStep(c.step);
+          return `Going to step ${c.step}.`;
+      }
+    },
+    [phase.kind, go, step, speakStep, runCheck, goToStep],
+  );
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -476,6 +564,7 @@ export default function BuildView() {
           getFrame={() => camera.current?.capture() ?? null}
           muted={muted}
           compact={compact}
+          onCommand={onCommand}
           context={{
             manual: manual?.title,
             step: step && { number: step.number, instruction: step.instruction, parts: step.parts.map((p) => `${p.qty}x ${p.name}`), watchFor: step.watchFor, selectedPart: selectedPart != null ? step.parts[selectedPart]?.name : undefined },
