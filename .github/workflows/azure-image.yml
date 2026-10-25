@@ -1,0 +1,30 @@
+# Builds the BuildSight container image and pushes it to Azure Container Registry.
+# (Azure for Students doesn't allow cloud builds inside the registry, so GitHub's runners build it.)
+# Runs on pushes to the claude/azure-deploy branch, or by hand from the Actions tab.
+# Needs repo secrets ACR_LOGIN_SERVER, ACR_USERNAME, ACR_PASSWORD (the registry's login; no app keys).
+name: Azure image
+
+on:
+  push:
+    branches: [claude/azure-deploy]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.ACR_LOGIN_SERVER }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ secrets.ACR_LOGIN_SERVER }}/buildsight:${{ github.sha }}
+            ${{ secrets.ACR_LOGIN_SERVER }}/buildsight:latest
