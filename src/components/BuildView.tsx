@@ -7,7 +7,7 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import type { CheckResult } from "@/app/api/check/route";
-import CheckErrorOverlay, { IssueBoxes, WarnGlyph } from "@/components/CheckErrorOverlay";
+import CheckErrorOverlay, { IssueBoxes, LiveIssueBoxes, WarnGlyph } from "@/components/CheckErrorOverlay";
 import { CATEGORY_TAG, checkVerdict, forStep, issueCategory, issueLabel, photoLabel, spokenIssues } from "@/lib/issueBox";
 import type { ExtractedStep } from "@/app/api/extract/route";
 import type { LocateResult } from "@/app/api/locate/route";
@@ -27,7 +27,7 @@ import { AUTO_MIN_CONFIDENCE, changed, decide, MAX_TILES, whereAmI, type Tile } 
 
 
 type Phase = { kind: "loading"; label: string } | { kind: "ready" } | { kind: "error"; message: string } | { kind: "done" };
-type Check = { state: "checking" } | { state: "result"; result: CheckResult; frame: string; id: number } | { state: "error"; message: string };
+type Check = { state: "checking" } | { state: "result"; result: CheckResult; frame: string; id: number; sample: Uint8ClampedArray | null } | { state: "error"; message: string };
 
 // Every step picture on one page, cut out and scaled to THUMB_H px tall, decoding the page only once.
 // Shared by the step strip and "where am I?" (see thumbsFor), so each picture is cut once per session.
@@ -229,6 +229,8 @@ function pageReader(manualId: string, source: PageSource) {
 export default function BuildView() {
   const { id } = useParams<{ id: string }>();
   const camera = useRef<CameraHandle>(null);
+  // What the live mistake boxes need from the camera (read when called, not during render).
+  const liveCamera = useMemo(() => ({ size: () => camera.current?.size() ?? null, sample: () => camera.current?.sample() ?? null }), []);
   const direction = useRef<1 | -1>(1);
   const landOn = useRef<number | null>(null); // step number the next page load opens at ("go to step 8")
   const landIdx = useRef<number | null>(null); // exact step index the next page load opens at (step strip)
@@ -501,6 +503,7 @@ export default function BuildView() {
   const runCheck = useCallback(async () => {
     if (!step || !target || check?.state === "checking") return;
     const frame = camera.current?.capture();
+    const sample = camera.current?.sample() ?? null; // the view at check time, to tell if the camera moves after
     if (!frame) return setCheck({ state: "error", message: "Camera isn't ready yet." });
     if (advance.current) clearTimeout(advance.current);
     const seq = ++checkSeq.current;
@@ -516,7 +519,7 @@ export default function BuildView() {
       if (seq !== checkSeq.current) return; // the step changed or a newer check started
       if (!res.ok) throw new Error(data.error);
       const result = data as CheckResult;
-      setCheck({ state: "result", result, frame, id: seq });
+      setCheck({ state: "result", result, frame, id: seq, sample });
       // A mistake is said with where it is ("The red 2x4 near the top left is rotated."), since the builder's eyes
       // are on the bricks; everything else says Claude's own sentence, as before.
       const spoken = checkVerdict(result) === "fix" ? spokenIssues(result.issues) : result.say;
@@ -831,6 +834,10 @@ export default function BuildView() {
     <main className="relative h-dvh w-full overflow-hidden bg-ink text-white">
       <CameraFeed ref={camera} />
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-ink/70 via-transparent to-ink/80" />
+      {/* the mistake boxes on the live camera too, while the camera stays where it was for the check */}
+      {check?.state === "result" && verdict === "fix" && showBoxes && (
+        <LiveIssueBoxes issues={check.result.issues} selected={issuePick} baseline={check.sample} camera={liveCamera} />
+      )}
 
       {/* top bar */}
       <header className="absolute inset-x-0 top-0 z-20 flex items-center justify-between gap-3 px-4 pt-[max(0.75rem,env(safe-area-inset-top))] sm:px-6">
