@@ -1,13 +1,26 @@
-# Builds the BuildSight container image and pushes it to Azure Container Registry.
-# (Azure for Students doesn't allow cloud builds inside the registry, so GitHub's runners build it.)
-# Runs on pushes to the claude/azure-deploy branch, or by hand from the Actions tab.
-# Needs repo secrets ACR_LOGIN_SERVER, ACR_USERNAME, ACR_PASSWORD (the registry's login; no app keys).
+# Builds the BuildSight container image, pushes it to Azure Container Registry, and deploys it to the
+# `buildsight` Container App (calhacks-rg, westus2).
+# - Build: GitHub's runners build the image (Azure for Students doesn't allow cloud builds inside the registry).
+#   Secrets: ACR_LOGIN_SERVER, ACR_USERNAME, ACR_PASSWORD (the registry's login; no app keys).
+# - Deploy: signs in to Azure with OIDC as the managed identity `buildsight-github-deploy` (Contributor on
+#   calhacks-rg only; trusts only this repo's main and claude/azure-deploy branches). No password is stored:
+#   AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID are identifiers.
+# App keys never pass through here: they're Container App secrets.
 name: Azure image
 
 on:
   push:
-    branches: [claude/azure-deploy]
+    branches: [main, claude/azure-deploy]
   workflow_dispatch:
+
+# One deploy at a time; a newer push waits for the running one instead of racing it.
+concurrency:
+  group: azure-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write # OIDC sign-in to Azure
 
 jobs:
   build:
@@ -28,3 +41,38 @@ jobs:
           tags: |
             ${{ secrets.ACR_LOGIN_SERVER }}/buildsight:${{ github.sha }}
             ${{ secrets.ACR_LOGIN_SERVER }}/buildsight:latest
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    env:
+      APP: buildsight
+      RG: calhacks-rg
+      IMAGE: ${{ secrets.ACR_LOGIN_SERVER }}/buildsight:${{ github.sha }}
+    steps:
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Deploy the commit's image
+        run: |
+          az config set extension.use_dynamic_install=yes_without_prompt extension.dynamic_install_allow_preview=true --only-show-errors
+          az containerapp update -n "$APP" -g "$RG" --image "$IMAGE" -o none --only-show-errors
+      - name: Check the new revision is healthy and serving this commit
+        run: |
+          # Express environments keep one revision ("buildsight--latest") and don't allow custom revision names,
+          # so look for the active revision running this commit's image.
+          ok=""
+          for i in $(seq 1 30); do
+            line=$(az containerapp revision list -n "$APP" -g "$RG" --only-show-errors -o tsv \
+              --query "[?properties.active && properties.template.containers[0].image=='$IMAGE'].[name, properties.healthState, properties.runningState] | [0]")
+            echo "active revision on this commit: ${line:-none yet}"
+            case "$line" in *Healthy*) ok=1; break ;; esac
+            sleep 10
+          done
+          [ -n "$ok" ] || { echo "::error::no healthy active revision on this commit's image"; exit 1; }
+          fqdn=$(az containerapp show -n "$APP" -g "$RG" --query properties.configuration.ingress.fqdn -o tsv --only-show-errors)
+          code=$(curl -s -o /dev/null -w "%{http_code}" "https://$fqdn/")
+          echo "https://$fqdn → $code"
+          [ "$code" = "200" ]
