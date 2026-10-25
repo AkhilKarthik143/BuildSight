@@ -32,5 +32,6 @@ Secrets are set once with `az containerapp secret set` and referenced as `secret
    (Contributor on `calhacks-rg` only; its federated credentials trust only this repo's `main` and `claude/azure-deploy`).
    No password is stored anywhere; the GitHub secrets `AZURE_CLIENT_ID` / `AZURE_TENANT_ID` / `AZURE_SUBSCRIPTION_ID`
    are identifiers. (A classic service principal wasn't possible: the Duke directory blocks app registrations.)
-   Then `az containerapp update` to the commit's image as revision `buildsight--c<sha8>`, and a check that this
-   revision is Healthy, serving that image, and the site returns 200.
+   Then `az containerapp update` to the commit's image, and a check that an active revision runs that image,
+   is Healthy, and the site returns 200. (The environment is an "express" environment: it keeps one revision,
+   `buildsight--latest`, and doesn't allow custom revision names.)
