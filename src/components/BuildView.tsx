@@ -919,12 +919,12 @@ export default function BuildView() {
                   const h = holoItems?.[i];
                   if (holoItems && !h?.cut) return null; // couldn't cut this one out of the manual
                   const many = step.parts.length > 1;
-                  const lots = step.parts.length > 2;
+                  const lots = step.parts.length > 2; // one part is as small as two, so the row never dominates the screen
                   return (
                     <div
                       key={`${stepKey}-${i}`}
                       aria-label={`${p.name}, ${p.qty} needed`}
-                      className={`relative shrink-0 ${lots ? "h-20 w-20 sm:h-28 sm:w-28" : many ? "h-24 w-24 sm:h-32 sm:w-32" : "h-36 w-36 sm:h-48 sm:w-48"}`}
+                      className={`relative shrink-0 ${lots ? "h-20 w-20 sm:h-28 sm:w-28" : "h-24 w-24 sm:h-32 sm:w-32"}`}
                     >
                       <PieceHologram state={h?.cut ? "ready" : "scanning"} cutout={h?.cut} size={h?.size} pieceKey={`${stepKey}-${i}`} />
                       {h?.cut && (
@@ -967,7 +967,7 @@ export default function BuildView() {
               if (info.offset.y > 50 || info.velocity.y > 400) setSheetOpen(false);
               else if (info.offset.y < -50 || info.velocity.y < -400) setSheetOpen(true);
             }}
-            className={`hud-panel holo-glow rounded-3xl touch-none sm:touch-auto ${compact ? "px-4 pb-3 pt-2" : "p-5 pt-3 sm:pt-5"}`}
+            className={`hud-panel holo-glow rounded-3xl touch-none sm:touch-auto ${compact ? "px-4 pb-3 pt-2" : "px-4 pb-4 pt-2 sm:p-5"}`}
           >
             {isPhone && (
               <button
@@ -998,9 +998,6 @@ export default function BuildView() {
                   className="shrink-0 rounded-xl bg-gradient-to-b from-sky-300 to-sky-500 px-4 py-2.5 text-sm font-semibold text-ink disabled:opacity-60"
                 >
                   {check?.state === "checking" ? "…" : "Check"}
-                </button>
-                <button onClick={() => go(1)} aria-label="Next step" className="shrink-0 rounded-xl border border-white/15 bg-white/[0.06] px-3 py-2.5 text-sm">
-                  →
                 </button>
               </div>
             )}
@@ -1065,7 +1062,7 @@ export default function BuildView() {
                 {stripItems.length > 1 && (
                   <div
                     aria-label="All steps"
-                    className="-mx-2 mb-3 flex snap-x gap-1.5 overflow-x-auto px-2 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                    className="-mx-2 mb-2 flex snap-x gap-1.5 overflow-x-auto px-2 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
                   >
                     {stripItems.map((item) => {
                       const key = `${item.page}-${item.idx}`;
@@ -1078,7 +1075,7 @@ export default function BuildView() {
                           onClick={() => jumpToStep(item.page, item.idx)}
                           aria-current={current ? "step" : undefined}
                           aria-label={`Go to step ${item.step.number}${item.step.sub ? `, part ${item.step.sub}` : ""}`}
-                          className={`relative h-11 w-14 shrink-0 snap-center overflow-hidden rounded-lg bg-white transition ${
+                          className={`relative h-10 w-14 shrink-0 snap-center overflow-hidden rounded-lg bg-white transition ${
                             current ? "ring-2 ring-sky-300 ring-offset-2 ring-offset-ink" : "opacity-60 hover:opacity-100"
                           }`}
                         >
@@ -1094,16 +1091,17 @@ export default function BuildView() {
                 )}
                 <div className="flex items-baseline justify-between">
                   <p className="text-xs font-semibold text-sky-300">{stepLabel(step)}</p>
-                  <p className="text-[11px] text-white/40">
-                    {stepIdx + 1}/{steps.length} on page {page}
+                  {/* the step is found from the camera automatically; while a check runs it says so here */}
+                  <p className={`text-[11px] ${locating ? "text-sky-300/80" : "text-white/40"}`} aria-live="polite">
+                    {locating ? "Checking where you are…" : `${stepIdx + 1}/${steps.length} on page ${page}`}
                   </p>
                 </div>
-                <h1 className="mt-1 text-xl font-semibold leading-snug sm:text-2xl">{step.instruction}</h1>
+                <h1 className="mt-0.5 text-[17px] font-semibold leading-snug sm:text-2xl">{step.instruction}</h1>
 
                 {step.watchFor[0] && !roomForResult && (
-                  <p className="mt-3 flex gap-2 text-xs text-amber-200/90">
+                  <p className="mt-2 flex gap-2 text-xs text-amber-200/90">
                     <span className="font-mono">⚠</span>
-                    {step.watchFor[0]}
+                    <span className="line-clamp-2">{step.watchFor[0]}</span>
                   </p>
                 )}
 
@@ -1151,26 +1149,14 @@ export default function BuildView() {
                   )}
                 </AnimatePresence>
 
-                {/* the step is found from the camera automatically; this only shows while a check runs */}
-                <p className={`mt-3 h-4 text-xs text-sky-300/80 transition-opacity ${locating ? "opacity-100" : "opacity-0"}`} aria-live="polite">
-                  {locating ? "Checking where you are…" : ""}
-                </p>
-
-                <div className="mt-3 grid grid-cols-[1fr_1.4fr_1fr] gap-2">
-                  <button onClick={() => go(-1)} className="rounded-xl border border-white/15 bg-white/[0.06] py-3 text-sm font-medium text-white/80 transition hover:bg-white/10 active:scale-95">
-                    Back
-                  </button>
-                  <button
-                    onClick={runCheck}
-                    disabled={check?.state === "checking"}
-                    className="rounded-xl bg-gradient-to-b from-sky-300 to-sky-500 py-3 text-sm font-semibold text-ink shadow-[inset_0_1px_0_rgba(255,255,255,0.4),0_6px_20px_-6px_rgba(92,200,255,0.7)] transition hover:brightness-110 active:scale-95 disabled:opacity-60"
-                  >
-                    {check?.state === "checking" ? "Checking…" : "Check build"}
-                  </button>
-                  <button onClick={() => go(1)} className="rounded-xl border border-white/15 bg-white/[0.06] py-3 text-sm font-medium text-white transition hover:bg-white/10 active:scale-95">
-                    Next
-                  </button>
-                </div>
+                {/* Back / Next are gone: the step strip, voice ("next", "go to step 8") and auto-detect move between steps */}
+                <button
+                  onClick={runCheck}
+                  disabled={check?.state === "checking"}
+                  className="mt-3 w-full rounded-xl bg-gradient-to-b from-sky-300 to-sky-500 py-2.5 text-sm font-semibold text-ink shadow-[inset_0_1px_0_rgba(255,255,255,0.4),0_6px_20px_-6px_rgba(92,200,255,0.7)] transition hover:brightness-110 active:scale-[0.98] disabled:opacity-60"
+                >
+                  {check?.state === "checking" ? "Checking…" : "Check build"}
+                </button>
               </>
             )}
           </motion.section>
