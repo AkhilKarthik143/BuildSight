@@ -140,9 +140,15 @@ export default function ManualPanel({
         className="hud-panel holo-glow block w-full cursor-grab touch-none select-none overflow-hidden rounded-xl text-left active:cursor-grabbing"
       >
         {showHeader && (
-          <div className="flex items-center justify-between px-3 pt-2">
-            <span className="text-[10px] font-semibold text-white/70 sm:text-[11px]">Step {stepNumber} · manual</span>
-            <span className="text-[10px] text-white/40">Tap to zoom</span>
+          <div className="flex items-center justify-between gap-2 whitespace-nowrap px-3 pt-2">
+            <span className="min-w-0 truncate text-[10px] font-semibold text-white/70 sm:text-[11px]">
+              Step {stepNumber}
+              <span className="hidden sm:inline"> · manual</span>
+            </span>
+            <span className="shrink-0 text-[10px] text-white/40">
+              <span className="sm:hidden">Zoom</span>
+              <span className="hidden sm:inline">Tap to zoom</span>
+            </span>
           </div>
         )}
         <div className="relative m-2 overflow-hidden rounded-lg bg-ink/60">

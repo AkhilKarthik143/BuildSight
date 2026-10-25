@@ -42,3 +42,6 @@ next-env.d.ts
 
 # allow the template
 !.env.example
+
+# taste-skill review output (screenshots, inspector reports)
+.taste-skill/
