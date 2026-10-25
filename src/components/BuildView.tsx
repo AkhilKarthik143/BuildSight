@@ -14,6 +14,7 @@ import type { LocateResult } from "@/app/api/locate/route";
 import type { PartMark } from "@/components/HighlightBox";
 import CameraFeed, { type CameraHandle } from "@/components/CameraFeed";
 import PieceHologram from "@/components/PieceHologram";
+import { describePart, partLines } from "@/lib/parts";
 import { cutOutPiece, type Cutout } from "@/lib/cutout";
 import ManualPanel from "@/components/ManualPanel";
 import VoicePanel from "@/components/VoicePanel";
@@ -301,7 +302,7 @@ export default function BuildView() {
     if (!job) {
       job = withGrid(target)
         .then((image) =>
-          fetch("/api/locate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ image, part: step.parts[i].name }) }),
+          fetch("/api/locate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ image, part: describePart(step.parts[i]), parts: partLines(step.parts) }) }),
         )
         .then((r) => (r.ok ? (r.json() as Promise<LocateResult>) : null))
         .catch(() => null);
@@ -514,7 +515,7 @@ export default function BuildView() {
       const res = await fetch("/api/check", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ frame, expected: target, previous: previous ?? undefined, instruction: step.instruction, watchFor: step.watchFor }),
+        body: JSON.stringify({ frame, expected: target, previous: previous ?? undefined, instruction: step.instruction, watchFor: step.watchFor, parts: partLines(step.parts) }),
       });
       const data = await res.json();
       if (seq !== checkSeq.current) return; // the step changed or a newer check started
