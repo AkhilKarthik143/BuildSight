@@ -106,10 +106,10 @@ body {
 .blink { animation: blink 1.4s steps(2, start) infinite; }
 @keyframes blink { to { visibility: hidden; } }
 
-/* Step-check mistake boxes (CheckErrorOverlay): a slow glow, brighter on the selected one */
-.issue-box { box-shadow: 0 0 12px 2px rgba(252, 211, 77, 0.55); animation: issue-glow 2.4s ease-in-out infinite; }
-.issue-box-on { box-shadow: 0 0 18px 4px rgba(252, 211, 77, 0.9); background-color: rgba(252, 211, 77, 0.2); }
-@keyframes issue-glow { 50% { box-shadow: 0 0 20px 4px rgba(252, 211, 77, 0.85); } }
+/* Step-check mistake boxes (CheckErrorOverlay): red with a slow glow, brighter on the selected one */
+.issue-box { box-shadow: 0 0 10px 2px rgba(239, 68, 68, 0.6), inset 0 0 8px rgba(239, 68, 68, 0.25); animation: issue-glow 2s ease-in-out infinite; }
+.issue-box-on { box-shadow: 0 0 20px 5px rgba(239, 68, 68, 0.95), inset 0 0 10px rgba(239, 68, 68, 0.35); background-color: rgba(239, 68, 68, 0.28); }
+@keyframes issue-glow { 50% { box-shadow: 0 0 22px 5px rgba(239, 68, 68, 0.9), inset 0 0 10px rgba(239, 68, 68, 0.35); } }
 
 @media (prefers-reduced-motion: reduce) {
   .spin-slow, .spin-rev, .spin-fast, .scan-bar::after, .blink, .hud-sweep, .issue-box { animation: none; }
