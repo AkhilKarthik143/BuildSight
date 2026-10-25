@@ -845,7 +845,8 @@ export default function BuildView() {
           )}
         </AnimatePresence>
         {phase.kind === "ready" && part && !compact && (
-          <div className="flex items-end justify-center gap-3 sm:justify-start">
+          // On phones the manual panel sits top right (about 9rem wide), so keep the holograms left of it.
+          <div className="flex items-end justify-start gap-3 pr-[10rem] sm:pr-0">
             {holoState !== "none" && step && (
               // Every part of the step as a hologram, numbered to match its boxes on the manual picture.
               <div className="flex max-w-full items-end gap-1 overflow-x-auto pb-4 [scrollbar-width:none] sm:gap-2">
@@ -853,11 +854,12 @@ export default function BuildView() {
                   const h = holoItems?.[i];
                   if (holoItems && !h?.cut) return null; // couldn't cut this one out of the manual
                   const many = step.parts.length > 1;
+                  const lots = step.parts.length > 2;
                   return (
                     <div
                       key={`${stepKey}-${i}`}
                       aria-label={`${p.name}, ${p.qty} needed`}
-                      className={`relative shrink-0 ${many ? "h-24 w-24 sm:h-32 sm:w-32" : "h-36 w-36 sm:h-48 sm:w-48"}`}
+                      className={`relative shrink-0 ${lots ? "h-20 w-20 sm:h-28 sm:w-28" : many ? "h-24 w-24 sm:h-32 sm:w-32" : "h-36 w-36 sm:h-48 sm:w-48"}`}
                     >
                       <PieceHologram state={h?.cut ? "ready" : "scanning"} cutout={h?.cut} size={h?.size} pieceKey={`${stepKey}-${i}`} />
                       {h?.cut && check?.state !== "checking" && (
