@@ -131,3 +131,10 @@ Format: **Decision** — why. *(date, PT)*
 
 ## Step detection says "It seems..."
 When auto-detect moves you to another step, it now says "It seems you're on step 12. Going there now." (or "It seems step 8 needs fixing: ..."). The softer wording fits a best guess that jumps without asking.
+
+## Mistake boxes on the checked photo
+A failed step check now draws a numbered amber box on each wrong piece and lists every problem with its fix.
+- Same `/api/check` call, no second request. The prompt asks for an optional `box` per issue as whole-number percentages (left/top/right/bottom) of the CAMERA image, plus a `kind`. `src/lib/issueBox.ts` validates them (finite, 0-100, at least 2% per side, at most 80% of the photo) and converts to 0-1 `{x, y, w, h}`. A bad box is dropped, its issue text stays. No boxes when `can_see` is false.
+- Boxes go on the exact JPEG that was checked, never the live video. The old phone layout cropped that photo with `object-cover`, which would misplace boxes, so `CheckErrorOverlay` shows the whole photo with a wrapper sized to the image: percentages of the wrapper are percentages of the photo. Tested on 4:3, 16:9 and portrait cameras.
+- A check result carries the step it ran on and is hidden on any other step. Answers from older checks are dropped, the auto-advance after a pass is canceled if the step changes, and automatic step detection pauses while a mistake is on screen. A mistake stays until Check again passes or the builder taps Close (Close never counts as fixed).
+- Model boxes are a pointer, not a measurement: the confidence number isn't calibrated, and box accuracy with real answers still needs a phone test.
