@@ -4,7 +4,8 @@
 export type Command =
   | { kind: "next" | "back" | "repeat" | "check" | "stop" | "locate" }
   | { kind: "goto"; step: number }
-  | { kind: "auto"; on: boolean };
+  | { kind: "auto"; on: boolean }
+  | { kind: "speed"; to: "faster" | "slower" | "fast" | "normal" | "careful" }; // Auto Mode speed
 
 const ONES: Record<string, number> = {
   zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
@@ -69,6 +70,16 @@ const AUTO = "(?:auto|automatic|auto check|auto checking)(?: mode)?";
 const AUTO_ON = new RegExp(`^(?:(?:turn on|switch on|enable|start|use) ${AUTO}|(?:turn|switch) ${AUTO} on|${AUTO} on)$`);
 const AUTO_OFF = new RegExp(`^(?:(?:turn off|switch off|disable|stop|end|exit) ${AUTO}|(?:turn|switch) ${AUTO} off|${AUTO} off)$`);
 
+// Auto Mode speed: "faster", "slow down", "auto speed fast", "set auto speed to careful", "normal mode".
+const SPEED_UP = /^(?:faster|go faster|speed up|check faster|be faster|auto faster|auto mode faster|speed it up)$/;
+const SPEED_DOWN = /^(?:slower|go slower|slow down|check slower|be slower|auto slower|auto mode slower|slow it down)$/;
+const PRESET = "(fast|normal|careful)";
+const SPEED_SET = [
+  new RegExp(`^(?:set )?(?:the )?(?:auto(?: mode| check)? )?speed (?:to )?${PRESET}$`),
+  new RegExp(`^(?:set )?auto(?: mode)? (?:to )?${PRESET}(?: speed| mode)?$`),
+  new RegExp(`^${PRESET} (?:speed|mode)$`),
+];
+
 /** The command a whole spoken phrase asks for, or null if it's something else (send it to Claude). */
 export function matchCommand(text: string): Command | null {
   const t = normalize(text);
@@ -76,6 +87,12 @@ export function matchCommand(text: string): Command | null {
   for (const [kind, re] of FIXED) if (re.test(t)) return { kind } as Command;
   if (AUTO_ON.test(t)) return { kind: "auto", on: true };
   if (AUTO_OFF.test(t)) return { kind: "auto", on: false };
+  if (SPEED_UP.test(t)) return { kind: "speed", to: "faster" };
+  if (SPEED_DOWN.test(t)) return { kind: "speed", to: "slower" };
+  for (const re of SPEED_SET) {
+    const m = t.match(re);
+    if (m) return { kind: "speed", to: m[1] as "fast" | "normal" | "careful" };
+  }
   for (const re of GOTO) {
     const m = t.match(re);
     const n = m && parseNumber(m[1]);
