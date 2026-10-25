@@ -128,3 +128,6 @@ Format: **Decision** — why. *(date, PT)*
 - [ ] Which LEGO set and IKEA piece; do both instruction PDFs download?
 - [ ] Step-check risk test result (goal: 13 of 15 judged right).
 - [ ] Team size and roles.
+
+## Step detection says "It seems..."
+When auto-detect moves you to another step, it now says "It seems you're on step 12. Going there now." (or "It seems step 8 needs fixing: ..."). The softer wording fits a best guess that jumps without asking.
