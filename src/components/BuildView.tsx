@@ -19,7 +19,8 @@ import { matchCommand } from "@/lib/commands";
 import { getManual, getPageSteps, saveManual, savePageSteps, type Manual } from "@/lib/manuals";
 import { openManualPdf, renderPage } from "@/lib/pdf";
 import { loadPrebuilt, type Prebuilt } from "@/lib/prebuilt";
-import { speak, stopSpeaking } from "@/lib/speech";
+import { speak, speaker, stopSpeaking } from "@/lib/speech";
+import { changed, decide, MAX_TILES, whereAmI, type Tile } from "@/lib/whereAmI";
 
 
 type Phase = { kind: "loading"; label: string } | { kind: "ready" } | { kind: "error"; message: string } | { kind: "done" };
@@ -130,8 +131,9 @@ type PageJob = { image: () => Promise<string>; steps: Promise<ExtractedStep[]> }
 // Renders and reads pages, each at most once: shared by the current page and the read-ahead.
 function pageReader(manualId: string, source: PageSource) {
   const jobs = new Map<number, PageJob>();
+  const read = new Map<number, ExtractedStep[]>(); // pages whose steps are known, for "where am I?"
   const limit = limiter(MAX_PARALLEL);
-  return (page: number): PageJob => {
+  const readPage = (page: number): PageJob => {
     const existing = jobs.get(page);
     if (existing) return existing;
     let rendered: Promise<string> | null = null;
@@ -157,9 +159,17 @@ function pageReader(manualId: string, source: PageSource) {
     const job = { image, steps };
     // A failed page can be retried.
     steps.catch(() => jobs.delete(page));
+    steps.then((found) => read.set(page, found)).catch(() => {});
     jobs.set(page, job);
     return job;
   };
+  // Pages read so far that have steps, in order, with their image (for "where am I?").
+  const pages = () =>
+    [...read.entries()]
+      .filter(([, found]) => found.length)
+      .sort(([a], [b]) => a - b)
+      .map(([p, found]) => ({ page: p, steps: found, image: readPage(p).image }));
+  return Object.assign(readPage, { pages, count: () => read.size });
 }
 
 export default function BuildView() {
@@ -198,6 +208,16 @@ export default function BuildView() {
   const highlight = found && found.key === partKey ? found : null;
   const [attempt, setAttempt] = useState(0); // bumped by Retry to re-read the page
   const [preview, setPreview] = useState<string | null>(null); // page image shown while Claude reads it
+  // "Where am I?" (asked for, or automatic): see findMyPlace and the auto-detect loop below.
+  const [readCount, setReadCount] = useState(0); // pages read so far, in view or in the background
+  const [locating, setLocating] = useState(false);
+  const [notice, setNotice] = useState<{ text: string; problems?: string[] } | null>(null);
+  const [auto, setAuto] = useState(true); // detect the step from the camera without being asked
+  const lastAuto = useRef(0); // when the last automatic check ran
+  const lastManual = useRef(0); // when the builder last changed step themselves
+  const autoJump = useRef(false); // the next step change is ours, not the builder's
+  const firstAutoDone = useRef(false);
+  const baseline = useRef<Uint8ClampedArray | null>(null); // camera sample at the last automatic check
 
   // Every page change shows the loading card first.
   const turnTo = useCallback((p: number) => {
@@ -474,6 +494,137 @@ export default function BuildView() {
     [doc, reader, phase, steps, stepIdx, page, muted, speakStep],
   );
 
+  // Once a step is up, read the rest of the book in the background, two pages at a time (so the page in view
+  // never waits), so "where am I?" can compare against every step. Pre-read manuals are instant.
+  const ready = phase.kind === "ready";
+  useEffect(() => {
+    if (!reader || !doc || !ready) return;
+    let stopped = false;
+    let next = 1;
+    const lane = async () => {
+      while (!stopped && next <= doc.numPages) {
+        const p = next++;
+        await reader(p).steps.catch(() => {});
+        if (!stopped) setReadCount(reader.count());
+      }
+    };
+    lane();
+    lane();
+    return () => {
+      stopped = true;
+    };
+  }, [reader, doc, ready]);
+
+  // Opens a tile's step: on this page at once, otherwise opens its page at that step.
+  const openTile = useCallback(
+    (t: Tile) => {
+      search.current++; // cancel any running "go to step" search
+      setCheck(null);
+      if (t.page === page) {
+        const idx = steps.findIndex((s) => s.number === t.number);
+        if (idx >= 0) return setStepIdx(idx);
+      }
+      landOn.current = t.number;
+      direction.current = 1;
+      turnTo(t.page);
+    },
+    [page, steps, turnTo],
+  );
+
+  // "Where am I?": compares the camera with every step picture read so far. Jumps to the next step, or back to
+  // an earlier step that looks broken. Asked for: always answers. Automatic: silent unless the step changes.
+  const findMyPlace = useCallback(
+    async (automatic = false) => {
+      if (!reader || !doc || locating) return;
+      const frame = camera.current?.capture();
+      const say = (text: string, problems?: string[]) => {
+        setNotice({ text, problems });
+        if (!muted) speak(text);
+      };
+      if (!frame) return automatic ? undefined : say("The camera isn't ready yet.");
+      const pages = reader.pages();
+      if (!pages.length) return automatic ? undefined : say("I haven't read any steps yet. Give me a moment.");
+      setLocating(true);
+      if (!automatic) setNotice({ text: "Finding your place…" });
+      try {
+        const tiles: Tile[] = [];
+        for (const pg of pages) {
+          const image = await pg.image();
+          for (const s of pg.steps) {
+            if (tiles.length >= MAX_TILES) break;
+            tiles.push({ tile: tiles.length + 1, page: pg.page, number: s.number, image: await crop(image, s.box) });
+          }
+        }
+        const complete = reader.count() >= doc.numPages;
+        const result = await whereAmI({ frame, tiles, complete });
+        const place = decide(result, tiles, complete, step && { page, number: step.number });
+        if (place.action === "fix" || place.action === "goto") {
+          autoJump.current = true;
+          say(place.say, place.action === "fix" ? place.problems : undefined);
+          openTile(place.target);
+        } else if (!automatic) {
+          say(place.say);
+        }
+      } catch (e) {
+        if (!automatic) say(e instanceof Error && e.message ? e.message : "I couldn't find your place.");
+      } finally {
+        setLocating(false);
+      }
+    },
+    [reader, doc, locating, muted, step, page, openTile],
+  );
+
+  // Step changes the builder made (Next, Back, voice, tapping) hold off automatic jumps for a while.
+  useEffect(() => {
+    if (autoJump.current) autoJump.current = false;
+    else lastManual.current = Date.now();
+  }, [stepKey]);
+
+  const toggleAuto = () => setAuto((a) => !a);
+
+  // Automatic detection. Watches a tiny grayscale camera sample on the phone (no network). Once the whole
+  // book is read it checks once, then again whenever the build has changed and the scene has held still for
+  // 1.5 s (hands out of the way). At most every 20 s, and not within 20 s of the builder changing step.
+  const autoState = useRef<{ ready: boolean; busy: boolean; findMyPlace: (automatic?: boolean) => void }>({ ready: false, busy: false, findMyPlace: () => {} });
+  useEffect(() => {
+    autoState.current = { ready, busy: locating || check?.state === "checking", findMyPlace };
+  });
+  useEffect(() => {
+    if (!auto || !reader || !doc) return;
+    let prev: Uint8ClampedArray | null = null;
+    let stillSince = Date.now();
+    const timer = setInterval(() => {
+      const sample = camera.current?.sample();
+      if (!sample) return;
+      const now = Date.now();
+      const moving = !prev || changed(prev, sample) > 0.02;
+      prev = sample;
+      if (moving) {
+        stillSince = now;
+        return;
+      }
+      if (now - stillSince < 1500) return;
+      const st = autoState.current;
+      if (!st.ready || st.busy || speaker().speaking || reader.count() < doc.numPages) return;
+      if (firstAutoDone.current) {
+        if (now - lastAuto.current < 20000 || now - lastManual.current < 20000) return;
+        if (baseline.current && changed(baseline.current, sample) < 0.04) return; // nothing new on the table
+      }
+      firstAutoDone.current = true;
+      lastAuto.current = now;
+      baseline.current = sample;
+      st.findMyPlace(true);
+    }, 500);
+    return () => clearInterval(timer);
+  }, [auto, reader, doc]);
+
+  // The notice fades after a while (problem lists stay longer). Tap to dismiss.
+  useEffect(() => {
+    if (!notice || locating) return;
+    const t = setTimeout(() => setNotice(null), notice.problems?.length ? 20000 : 8000);
+    return () => clearTimeout(t);
+  }, [notice, locating]);
+
   // Spoken commands from the voice panel; returns what to show in the transcript, or null to ask Claude instead.
   const onCommand = useCallback(
     (text: string): string | null => {
@@ -501,9 +652,12 @@ export default function BuildView() {
         case "goto":
           goToStep(c.step);
           return `Going to step ${c.step}.`;
+        case "locate":
+          findMyPlace();
+          return "Finding your place…";
       }
     },
-    [phase.kind, go, step, speakStep, runCheck, goToStep],
+    [phase.kind, go, step, speakStep, runCheck, goToStep, findMyPlace],
   );
 
   useEffect(() => {
@@ -543,6 +697,7 @@ export default function BuildView() {
           <p className="truncate text-[11px] text-white/50">
             {manual?.subtitle}
             {doc && page > 0 ? ` · Page ${page}/${doc.numPages}` : ""}
+            {doc && readCount > 0 && readCount < doc.numPages ? ` · read ${readCount}/${doc.numPages}` : ""}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -638,7 +793,30 @@ export default function BuildView() {
       </div>
 
       {/* bottom: hologram + step card */}
-      <div className="absolute inset-x-0 bottom-0 z-10 flex flex-col gap-3 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:bottom-6 sm:left-6 sm:right-auto sm:w-[440px] sm:p-0">
+      {/* above the manual panel (z-25) while a "where am I?" message shows, so it's never hidden */}
+      <div className={`absolute inset-x-0 bottom-0 ${notice ? "z-30" : "z-10"} flex flex-col gap-3 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:bottom-6 sm:left-6 sm:right-auto sm:w-[440px] sm:p-0`}>
+        {/* "where am I?" result (asked for, or an automatic jump) */}
+        <AnimatePresence>
+          {notice && (
+            <motion.div
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 8 }}
+              onClick={() => setNotice(null)}
+              role="status"
+              className={`hud-panel rounded-2xl !bg-ink/95 px-4 py-3 text-sm ${notice.problems?.length ? "border border-amber-300/40 text-amber-50" : "text-sky-50"}`}
+            >
+              <p>{notice.text}</p>
+              {notice.problems && notice.problems.length > 1 && (
+                <ol className="mt-2 list-decimal space-y-1 pl-4 text-xs text-white/75">
+                  {notice.problems.map((p) => (
+                    <li key={p}>{p}</li>
+                  ))}
+                </ol>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
         {phase.kind === "ready" && part && !compact && (
           <div className="flex items-end justify-center gap-3 sm:justify-start">
             <AnimatePresence>
@@ -865,7 +1043,22 @@ export default function BuildView() {
                   )}
                 </AnimatePresence>
 
-                <div className="mt-5 grid grid-cols-[1fr_1.4fr_1fr] gap-2">
+                <div className="mt-4 flex items-center justify-between gap-3 text-xs">
+                  <button onClick={() => findMyPlace()} disabled={locating} className="font-medium text-sky-300 transition hover:text-sky-200 disabled:opacity-60">
+                    {locating ? "Finding your place…" : "Where am I?"}
+                  </button>
+                  <button
+                    onClick={toggleAuto}
+                    aria-pressed={auto}
+                    title="Find the step from the camera automatically"
+                    className="flex items-center gap-1.5 text-white/60 transition hover:text-white/90"
+                  >
+                    <span className={`h-1.5 w-1.5 rounded-full ${auto ? "bg-emerald-300" : "bg-white/30"}`} />
+                    Auto-detect {auto ? "on" : "off"}
+                  </button>
+                </div>
+
+                <div className="mt-3 grid grid-cols-[1fr_1.4fr_1fr] gap-2">
                   <button onClick={() => go(-1)} className="rounded-xl border border-white/15 bg-white/[0.06] py-3 text-sm font-medium text-white/80 transition hover:bg-white/10 active:scale-95">
                     Back
                   </button>
