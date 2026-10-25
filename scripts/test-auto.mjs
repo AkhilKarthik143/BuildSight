@@ -1,6 +1,24 @@
 // Checks Auto Mode's decisions (src/lib/autoCheck.ts): the pass rule, the backoff, and the "changed, then still" trigger.
 // Run: npm run test:auto
-import { AUTO_MAX_MISSES, gapFor, markChecked, newWatch, recordMiss, resetForStep, tick } from "../src/lib/autoCheck.ts";
+import {
+  AUTO_ADVANCE_MS,
+  AUTO_BASE_GAP_MS,
+  AUTO_MAX_GAP_MS,
+  AUTO_MAX_MISSES,
+  AUTO_PRESETS,
+  AUTO_STILL_MS,
+  DEFAULT_SPEED,
+  describeTiming,
+  gapFor,
+  markChecked,
+  newWatch,
+  presetAt,
+  recordMiss,
+  resetForStep,
+  stepSpeed,
+  tick,
+  timingFor,
+} from "../src/lib/autoCheck.ts";
 import { checkVerdict as verdictOf, isPass } from "../src/lib/issueBox.ts";
 
 let failed = 0;
@@ -102,6 +120,61 @@ recordMiss(w, "notyet");
 recordMiss(w, "unsure");
 eq("a can't-see in between resets the streak", recordMiss(w, "notyet"), false);
 eq("misses counted for backoff", w.misses, 3);
+
+// ── speed presets ──
+const pick = (t) => [t.stillMs, t.baseGapMs, t.maxGapMs, t.advanceMs];
+eq("Careful = the original constants", pick(AUTO_PRESETS.careful), [AUTO_STILL_MS, AUTO_BASE_GAP_MS, AUTO_MAX_GAP_MS, AUTO_ADVANCE_MS]);
+eq("Normal: still 1.2 s, gap 5 s (max 20 s), countdown 3 s", pick(AUTO_PRESETS.normal), [1200, 5000, 20000, 3000]);
+eq("Fast: still 0.8 s, gap 3 s (max 12 s), countdown 2 s", pick(AUTO_PRESETS.fast), [800, 3000, 12000, 2000]);
+eq("default speed is Normal", [DEFAULT_SPEED, presetAt(DEFAULT_SPEED)], [0.5, "normal"]);
+eq("slider ends and middle land on the presets", [timingFor(0), timingFor(0.5), timingFor(1)], [AUTO_PRESETS.careful, AUTO_PRESETS.normal, AUTO_PRESETS.fast]);
+const mid = timingFor(0.75);
+eq("between Normal and Fast → in between", [mid.stillMs > 800 && mid.stillMs < 1200, mid.baseGapMs > 3000 && mid.baseGapMs < 5000], [true, true]);
+const curve = [0, 0.1, 0.3, 0.5, 0.6, 0.8, 1].map(timingFor);
+eq("faster slider never waits longer", curve.every((t, i) => i === 0 || (t.stillMs <= curve[i - 1].stillMs && t.baseGapMs <= curve[i - 1].baseGapMs)), true);
+eq("out-of-range / bad slider values are clamped", [timingFor(-3), timingFor(9), timingFor(NaN)], [AUTO_PRESETS.careful, AUTO_PRESETS.fast, AUTO_PRESETS.normal]);
+eq("presetAt between presets → null", presetAt(0.3), null);
+eq("backoff still doubles at Fast (3, 3, 6, 12, 12 s)", [0, 1, 2, 3, 4].map((m) => gapFor(m, AUTO_PRESETS.fast)), [3000, 3000, 6000, 12000, 12000]);
+eq("backoff at Normal (5, 5, 10, 20, 20 s)", [0, 1, 2, 3, 4].map((m) => gapFor(m, AUTO_PRESETS.normal)), [5000, 5000, 10000, 20000, 20000]);
+eq("plain words", describeTiming(AUTO_PRESETS.normal), "Checks after 1.2 s still · at most every 5 s");
+eq("plain words, Fast", describeTiming(AUTO_PRESETS.fast), "Checks after 0.8 s still · at most every 3 s");
+eq("faster: Careful → Normal → Fast → Fast", [stepSpeed(0, 1), stepSpeed(0.5, 1), stepSpeed(1, 1)], [0.5, 1, 1]);
+eq("slower: Fast → Normal → Careful → Careful", [stepSpeed(1, -1), stepSpeed(0.5, -1), stepSpeed(0, -1)], [0.5, 0, 0]);
+eq("faster from between presets → next preset up", [stepSpeed(0.3, 1), stepSpeed(0.7, -1)], [0.5, 0.5]);
+
+// Fast trigger: samples every 250 ms, checks after 0.8 s still, 3 s between checks, and still pauses after 4 misses.
+const F = AUTO_PRESETS.fast;
+function holdAt(w, sample, from, ms, timing, blocked = false) {
+  let t;
+  for (let now = from; now <= from + ms; now += timing.sampleMs) t = tick(w, sample, now, blocked, timing);
+  return t;
+}
+let f = newWatch(0);
+holdAt(f, empty, 0, 1000, F); // baseline after 0.8 s still
+eq("Fast: baseline after 0.8 s still", f.baseline === empty, true);
+let ft = tick(f, hand, 5000, false, F);
+ft = holdAt(f, onePiece, 5250, 500, F);
+eq("Fast: piece still 0.5 s → not yet", [ft.check, ft.reason], [false, "moving"]);
+ft = holdAt(f, onePiece, 5750, 500, F);
+eq("Fast: piece still 0.8 s → check", [ft.check, ft.reason], [true, "changed, then still"]);
+markChecked(f, onePiece, 6250);
+recordMiss(f, "notyet");
+ft = tick(f, hand, 7000, false, F);
+ft = holdAt(f, empty, 7250, 1000, F); // changed back and still, but within the 3 s gap
+eq("Fast: within 3 s of the last check → cooling down", [ft.check, ft.reason], [false, "cooling down"]);
+ft = holdAt(f, empty, 8500, 1000, F);
+eq("Fast: after 3 s → checks again", ft.check, true);
+f.misses = AUTO_MAX_MISSES;
+ft = tick(f, hand, 20000, false, F);
+ft = holdAt(f, onePiece, 20250, 2000, F);
+eq(`Fast: still paused after ${AUTO_MAX_MISSES} misses`, [ft.check, ft.reason], [false, `paused after ${AUTO_MAX_MISSES} misses`]);
+// A slow hand drifting (1.2% of pixels per 250 ms sample) counts as moving at Fast, as it would at 500 ms.
+const drift = (k) => scene(180, Math.round(N * 0.012 * k));
+let d = newWatch(0);
+holdAt(d, empty, 0, 1000, F);
+let dt;
+for (let k = 1, now = 2000; k <= 6; k++, now += F.sampleMs) dt = tick(d, drift(k), now, false, F);
+eq("Fast: a slowly moving hand still counts as moving", dt.reason, "moving");
 
 console.log(`\n${total - failed}/${total} passed`);
 process.exit(failed ? 1 : 0);

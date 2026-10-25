@@ -28,11 +28,18 @@ import { speak, speaker, stopSpeaking } from "@/lib/speech";
 import { AUTO_MIN_CONFIDENCE, changed, decide, MAX_TILES, whereAmI, type Tile } from "@/lib/whereAmI";
 import { encodeCanvas } from "@/lib/encode";
 import {
-  AUTO_ADVANCE_MS,
   AUTO_CHANGE_THRESHOLD,
   AUTO_MAX_MISSES,
   AUTO_SPEAK_FIX_CONFIDENCE,
+  DEFAULT_SPEED,
+  describeTiming,
   MANUAL_ADVANCE_MS,
+  presetAt,
+  SPEED_OF,
+  stepSpeed,
+  timingFor,
+  type AutoPreset,
+  type AutoTiming,
   markChecked,
   newWatch,
   recordMiss,
@@ -93,6 +100,120 @@ function AutoToggle({ on, small }: { on: boolean; small?: boolean }) {
       </span>
       Auto
     </button>
+  );
+}
+
+// Auto Mode speed, remembered per device: 0 = Careful … 0.5 = Normal (default) … 1 = Fast. See timingFor in autoCheck.ts.
+const SPEED_KEY = "buildsight:autoSpeed";
+const speedListeners = new Set<() => void>();
+function readAutoSpeed() {
+  try {
+    const v = Number(localStorage.getItem(SPEED_KEY));
+    return localStorage.getItem(SPEED_KEY) != null && Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : DEFAULT_SPEED;
+  } catch {
+    return DEFAULT_SPEED;
+  }
+}
+function setAutoSpeedStored(v: number) {
+  try {
+    localStorage.setItem(SPEED_KEY, String(Math.min(1, Math.max(0, v))));
+  } catch {}
+  speedListeners.forEach((fn) => fn());
+}
+function useAutoSpeed() {
+  return useSyncExternalStore(
+    (onChange) => {
+      speedListeners.add(onChange);
+      return () => void speedListeners.delete(onChange);
+    },
+    readAutoSpeed,
+    () => DEFAULT_SPEED,
+  );
+}
+const PRESET_LABEL: Record<AutoPreset, string> = { careful: "Careful", normal: "Normal", fast: "Fast" };
+
+// Gear next to the Auto switch: a small popover to pick how quickly Auto Mode checks and moves on.
+function AutoSpeedSettings({ speed, small }: { speed: number; small?: boolean }) {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: PointerEvent) => !box.current?.contains(e.target as Node) && setOpen(false);
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("pointerdown", away);
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("pointerdown", away);
+      document.removeEventListener("keydown", esc);
+    };
+  }, [open]);
+  const t = timingFor(speed);
+  const preset = presetAt(speed);
+  return (
+    <div ref={box} className={`relative shrink-0 ${open ? "z-50" : ""}`} onPointerDown={(e) => e.stopPropagation()}>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-label={`Auto speed: ${preset ? PRESET_LABEL[preset] : "custom"}`}
+        aria-expanded={open}
+        title="Auto speed"
+        className={`grid h-full place-items-center rounded-xl border border-white/15 bg-white/[0.06] text-white/60 transition hover:text-white/90 active:scale-95 ${small ? "w-10 py-2.5" : "w-10 py-2.5"} ${open ? "border-sky-300/50 text-sky-200" : ""}`}
+      >
+        <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" />
+        </svg>
+      </button>
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, y: 6, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 6, scale: 0.97 }}
+            transition={{ duration: 0.15 }}
+            role="dialog"
+            aria-label="Auto speed"
+            className="absolute bottom-full right-0 z-50 mb-2 w-64 max-w-[calc(100vw-2rem)] rounded-2xl border border-sky-300/25 bg-[#070c16] p-3 text-left shadow-[0_12px_40px_-8px_rgba(0,0,0,0.9)]"
+          >
+            <div className="flex items-baseline justify-between">
+              <p className="text-xs font-semibold text-white/90">Auto speed</p>
+              <p className="text-[11px] text-sky-300">{preset ? PRESET_LABEL[preset] : "Custom"}</p>
+            </div>
+            <div className="mt-2 grid grid-cols-3 gap-1 rounded-xl bg-white/[0.05] p-1">
+              {(["careful", "normal", "fast"] as AutoPreset[]).map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setAutoSpeedStored(SPEED_OF[p])}
+                  aria-pressed={preset === p}
+                  className={`rounded-lg py-1.5 text-xs font-semibold transition ${preset === p ? "bg-sky-300 text-ink" : "text-white/65 hover:text-white"}`}
+                >
+                  {PRESET_LABEL[p]}
+                </button>
+              ))}
+            </div>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.05}
+              value={speed}
+              onChange={(e) => setAutoSpeedStored(Number(e.target.value))}
+              aria-label="Auto speed, from careful to fast"
+              className="mt-3 w-full accent-sky-300"
+            />
+            <div className="flex justify-between text-[10px] text-white/40">
+              <span>Careful</span>
+              <span>Fast</span>
+            </div>
+            <p className="mt-2 text-[11px] leading-snug text-white/75">{describeTiming(t)}</p>
+            <p className="mt-0.5 text-[11px] leading-snug text-white/45">
+              Moves on {Number((t.advanceMs / 1000).toFixed(1))} s after a pass · waits longer after misses
+            </p>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
   );
 }
 
@@ -355,6 +476,12 @@ export default function BuildView() {
   const baseline = useRef<Uint8ClampedArray | null>(null); // camera sample at the last automatic check
   // Auto Mode: checks the build on its own ("changed, then still") and moves on when it passes. See src/lib/autoCheck.ts.
   const autoMode = useAutoMode();
+  const autoSpeed = useAutoSpeed();
+  const timing = useMemo(() => timingFor(autoSpeed), [autoSpeed]);
+  const timingRef = useRef<AutoTiming>(timing); // read by runCheck's move-on countdown without re-creating it
+  useEffect(() => {
+    timingRef.current = timing;
+  }, [timing]);
   const watch = useRef(newWatch(0));
   const [autoStatus, setAutoStatus] = useState<string | null>(null); // what Auto Mode is doing, in the step card
   const currentKey = useRef(stepKey);
@@ -622,7 +749,7 @@ export default function BuildView() {
       } else {
         setCheckState(null);
       }
-      if (pass) setAdvance({ id: seq, delay: automatic ? AUTO_ADVANCE_MS : MANUAL_ADVANCE_MS, waitForVoice: automatic, started: false });
+      if (pass) setAdvance({ id: seq, delay: automatic ? timingRef.current.advanceMs : MANUAL_ADVANCE_MS, waitForVoice: automatic, started: false });
       return result;
     } catch (e) {
       if (seq !== checkSeq.current) return null;
@@ -916,9 +1043,10 @@ export default function BuildView() {
     canCheck: boolean;
     pending: boolean;
     runCheck: (automatic?: boolean) => Promise<CheckResult | null>;
+    timing: AutoTiming;
   };
   const autoState = useRef<AutoState>({
-    ready: false, busy: false, checking: false, findMyPlace: () => {}, autoMode: false, canCheck: false, pending: false, runCheck: async () => null,
+    ready: false, busy: false, checking: false, findMyPlace: () => {}, autoMode: false, canCheck: false, pending: false, runCheck: async () => null, timing,
   });
   useEffect(() => {
     // A mistake on screen pauses it too, so it doesn't jump away while the builder is fixing it.
@@ -932,8 +1060,11 @@ export default function BuildView() {
       canCheck: !!step && !!target && targetKey === stepKey,
       pending: !!pending,
       runCheck,
+      timing,
     };
   });
+  // Auto Mode samples faster at quicker speeds (250 ms at Fast) so "still for 0.8 s" is measured finely enough.
+  const sampleMs = autoMode ? timing.sampleMs : 500;
   useEffect(() => {
     if (!reader || !doc) return;
     let prev: Uint8ClampedArray | null = null;
@@ -945,7 +1076,7 @@ export default function BuildView() {
         if (!fine) return;
         const now = Date.now();
         const w = watch.current;
-        const t = tick(w, fine, now, !st.ready || st.checking || st.pending || speaker().speaking);
+        const t = tick(w, fine, now, !st.ready || st.checking || st.pending || speaker().speaking, st.timing);
         // For tuning under the venue lights: how much the table differs from the last checked scene.
         console.log(
           `[auto] change ${t.change == null ? "—" : (t.change * 100).toFixed(1) + "%"} (needs ${(AUTO_CHANGE_THRESHOLD * 100).toFixed(1)}%)` +
@@ -985,9 +1116,9 @@ export default function BuildView() {
       lastAuto.current = now;
       baseline.current = sample;
       st.findMyPlace(true);
-    }, 500);
+    }, sampleMs);
     return () => clearInterval(timer);
-  }, [reader, doc]);
+  }, [reader, doc, sampleMs]);
 
   // The notice fades after a while (problem lists stay longer). Tap to dismiss.
   useEffect(() => {
@@ -1030,6 +1161,14 @@ export default function BuildView() {
         setAutoModeStored(c.on);
         return c.on ? "Auto Mode on: I'll check each step when you finish it." : "Auto Mode off.";
       }
+      if (c.kind === "speed") {
+        const now = readAutoSpeed(); // the saved value, current even if two commands arrive before a re-render
+        const next = c.to === "faster" ? stepSpeed(now, 1) : c.to === "slower" ? stepSpeed(now, -1) : SPEED_OF[c.to];
+        setAutoSpeedStored(next);
+        const name = PRESET_LABEL[presetAt(next) ?? "normal"];
+        if (!muted) speak(`Auto speed ${name.toLowerCase()}.`);
+        return `Auto speed: ${name}. ${describeTiming(timingFor(next))}.`;
+      }
       if (phase.kind === "loading") return "One moment, still loading.";
       switch (c.kind) {
         case "next":
@@ -1053,7 +1192,7 @@ export default function BuildView() {
           return "Finding your place…";
       }
     },
-    [phase.kind, go, step, speakStep, runCheck, goToStep, findMyPlace, pending],
+    [phase.kind, go, step, speakStep, runCheck, goToStep, findMyPlace, pending, muted],
   );
 
   useEffect(() => {
@@ -1350,6 +1489,7 @@ export default function BuildView() {
                   <p className="truncate text-sm font-medium">{step.instruction}</p>
                 </button>
                 <AutoToggle on={autoMode} small />
+                <AutoSpeedSettings speed={autoSpeed} small />
                 <button
                   onClick={() => runCheck()}
                   disabled={check?.state === "checking"}
@@ -1625,6 +1765,7 @@ export default function BuildView() {
                   {check?.state === "checking" ? "Checking…" : "Check build"}
                 </button>
                 <AutoToggle on={autoMode} />
+                <AutoSpeedSettings speed={autoSpeed} />
                 </div>
               </>
             )}
