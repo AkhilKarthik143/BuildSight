@@ -181,3 +181,11 @@ A design review of the hub and the build screen found the accent spread over sev
 - Phones: the build header keeps "Page 5/68" visible (only the subtitle truncates), the voice status wraps to two lines instead of cutting off, the manual panel header reads "Step 1 · Zoom" on one line. Panel sizes and positions unchanged.
 - "System error" now reads "Something went wrong — try again".
 - Tag `demo-stable` marks the last commit before this pass.
+
+## Six display-only categories on the hub
+The hub now has 8 category tabs: LEGO, IKEA, PC Build, Home Repair, Car Care, Bike Repair, Field Technician, First Aid (plus My projects). The six new ones show what BuildSight could guide; LEGO and IKEA stay the only working flows.
+- Each new tab has a one-line description and 3–4 project cards laid out like the LEGO cards (category badge, title, "steps · time · level" line, "Start →"). The art is a line icon on a light tile with a faint holo grid, not photos: nothing to license, no new dependency (the project has no icon library, so the icons are inline SVG like the rest).
+- Tapping a new card shows a small toast, "Demo available for LEGO and IKEA", for 2.4 s. A toast beats a silent no-op, which reads as a broken tap. No navigation, no BuildView, no API call.
+- Every tab now has a small icon so old and new tabs match. On phones the tab row scrolls sideways and the tapped tab scrolls into view; at 1440 px all 9 fit on one line. The row's bottom rule is now an inset shadow so the scroll container doesn't clip the active underline.
+- In a new tab the search box filters its cards; the Search button (live LEGO/IKEA lookup) is hidden there.
+- Easy to remove: delete `src/data/extraCategories.ts`, `src/components/hud/ExtraCard.tsx`, `src/components/hud/ExtraIcons.tsx` (or keep it for the tab icons) and the lines in `Hub.tsx` that use them.

@@ -5,14 +5,18 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import BookPicker from "@/components/hud/BookPicker";
 import CatalogCard from "@/components/hud/CatalogCard";
+import ExtraCard from "@/components/hud/ExtraCard";
+import Icon, { type IconName } from "@/components/hud/ExtraIcons";
 import HudBackdrop from "@/components/hud/HudBackdrop";
 import ManualCard from "@/components/hud/ManualCard";
 import SearchScan from "@/components/hud/SearchScan";
 import StatusBar from "@/components/hud/StatusBar";
 import { categoriesOf, IKEA, LEGO, matches, toResult, type CatalogItem, type CatalogManual } from "@/lib/catalog";
+import { EXTRA_CATEGORIES } from "@/data/extraCategories";
 import { addFromResult, addUpload, listManuals, removeManual, type Manual, type ManualResult } from "@/lib/manuals";
 
-type Tab = "lego" | "ikea" | "mine";
+// "lego" | "ikea" | "mine", or the id of a display-only category from extraCategories.ts
+type Tab = string;
 const isSetNumber = (q: string) => /^\d{4,7}(-\d)?$/.test(q.trim());
 
 export default function Hub() {
@@ -29,6 +33,9 @@ export default function Hub() {
   // Live search for things not in the catalog (any LEGO set number, any IKEA product)
   const [live, setLive] = useState<{ q: string; results: ManualResult[] } | null>(null);
   const [searching, setSearching] = useState<string | null>(null); // the query being searched right now
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(toastTimer.current), []);
 
   useEffect(() => {
     listManuals().then(setLibrary).catch(() => setLibrary([]));
@@ -52,8 +59,22 @@ export default function Hub() {
     [items, category, query],
   );
   const inProgress = library?.find((m) => m.page > 1);
+  const extra = EXTRA_CATEGORIES.find((c) => c.id === tab); // a display-only category is open
+  const isCatalog = tab === "lego" || tab === "ikea";
+  const extraShown = useMemo(() => {
+    const q = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    return extra?.projects.filter((p) => q.every((w) => `${p.title} ${p.subtitle}`.toLowerCase().includes(w))) ?? [];
+  }, [extra, query]);
 
-  function switchTab(t: Tab) {
+  // Display-only cards have no build flow behind them.
+  function showDemoToast() {
+    clearTimeout(toastTimer.current);
+    setToast("Demo available for LEGO and IKEA");
+    toastTimer.current = setTimeout(() => setToast(null), 2400);
+  }
+
+  function switchTab(t: Tab, el?: HTMLElement) {
+    el?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
     setTab(t);
     setCategory("All");
     setLive(null);
@@ -114,10 +135,11 @@ export default function Hub() {
     setLibrary((l) => l?.filter((m) => m.id !== id) ?? null);
   }
 
-  const tabs: { id: Tab; label: string; count?: number }[] = [
-    { id: "lego", label: "LEGO", count: LEGO.length },
-    { id: "ikea", label: "IKEA", count: IKEA.length },
-    { id: "mine", label: "My projects", count: library?.length },
+  const tabs: { id: Tab; label: string; icon: IconName; count?: number }[] = [
+    { id: "lego", label: "LEGO", icon: "brick", count: LEGO.length },
+    { id: "ikea", label: "IKEA", icon: "chair", count: IKEA.length },
+    ...EXTRA_CATEGORIES.map((c) => ({ id: c.id, label: c.label, icon: c.icon })),
+    { id: "mine", label: "My projects", icon: "folder", count: library?.length },
   ];
 
   return (
@@ -157,7 +179,7 @@ export default function Hub() {
             transition={{ delay: 0.2 }}
             onSubmit={(e) => {
               e.preventDefault();
-              if (tab === "mine") return;
+              if (!isCatalog) return;
               // Catalog filters as you type; Enter also searches LEGO/IKEA live for anything not listed.
               liveSearch(query);
             }}
@@ -173,11 +195,13 @@ export default function Hub() {
                 setQuery(e.target.value);
                 setLive(null);
               }}
-              placeholder={tab === "ikea" ? "Search IKEA furniture" : tab === "lego" ? "Search sets, themes or a set number" : "Search your projects"}
+              placeholder={
+                tab === "ikea" ? "Search IKEA furniture" : tab === "lego" ? "Search sets, themes or a set number" : extra ? `Search ${extra.label} guides` : "Search your projects"
+              }
               aria-label="Search manuals"
               className="min-w-0 flex-1 bg-transparent py-3 text-base text-white placeholder:text-white/35 focus:outline-none"
             />
-            {tab !== "mine" && (
+            {isCatalog && (
               <button
                 type="submit"
                 disabled={searching != null}
@@ -207,21 +231,25 @@ export default function Hub() {
             pinned ? "border-b border-white/[0.06] bg-ink/85 backdrop-blur-xl" : "bg-transparent"
           }`}
         >
-          <div className="flex items-center gap-1 border-b border-white/[0.07]">
+          {/* scrolls sideways on phones; the bottom rule is an inset shadow so the underline isn't clipped */}
+          <div className="-mx-5 flex items-center gap-1 overflow-x-auto px-5 shadow-[inset_0_-1px_0_rgba(255,255,255,0.07)] [scrollbar-width:none] sm:mx-0 sm:px-0 [&::-webkit-scrollbar]:hidden">
             {tabs.map((t) => (
               <button
                 key={t.id}
-                onClick={() => switchTab(t.id)}
-                className={`relative -mb-px flex items-center gap-2 px-3 py-2.5 text-sm font-medium transition ${tab === t.id ? "text-white" : "text-white/45 hover:text-white/80"}`}
+                onClick={(e) => switchTab(t.id, e.currentTarget)}
+                className={`relative flex shrink-0 items-center gap-1.5 whitespace-nowrap px-3 py-2.5 text-sm font-medium transition ${tab === t.id ? "text-white" : "text-white/45 hover:text-white/80"}`}
               >
+                <Icon name={t.icon} className={`h-4 w-4 ${tab === t.id ? "text-holo" : ""}`} />
                 {t.label}
-                {t.count != null && t.count > 0 && <span className="rounded-full bg-white/[0.07] px-1.5 text-[11px] text-white/50">{t.count}</span>}
-                {tab === t.id && <motion.span layoutId="tab-underline" className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-holo" />}
+                {t.count != null && t.count > 0 && <span className="ml-0.5 rounded-full bg-white/[0.07] px-1.5 text-[11px] text-white/50">{t.count}</span>}
+                {tab === t.id && <motion.span layoutId="tab-underline" className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-holo" />}
               </button>
             ))}
           </div>
 
-          {tab !== "mine" && (
+          {extra && <p className="mt-3 text-sm text-white/55">{extra.description}</p>}
+
+          {isCatalog && (
             <div className="mt-3 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none]">
               {categories.map((c) => (
                 <button
@@ -242,7 +270,7 @@ export default function Hub() {
 
         {/* live search results (anything not in the catalog) */}
         <AnimatePresence>
-          {(searching != null || live) && tab !== "mine" && (
+          {(searching != null || live) && isCatalog && (
             <motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="mt-4">
               {searching != null ? (
                 <SearchScan key={searching} query={searching} lego={isSetNumber(searching)} />
@@ -273,7 +301,7 @@ export default function Hub() {
         </AnimatePresence>
 
         {/* catalog */}
-        {tab !== "mine" && (
+        {isCatalog && (
           <section className="mt-4">
             {shown.length === 0 && !live && searching == null && (
               <p className="mt-6 text-sm text-white/50">
@@ -284,6 +312,20 @@ export default function Hub() {
               <AnimatePresence mode="popLayout">
                 {shown.map((item, i) => (
                   <CatalogCard key={item.id} item={item} index={i} busy={opening === item.id} onOpen={() => openItem(item)} />
+                ))}
+              </AnimatePresence>
+            </motion.div>
+          </section>
+        )}
+
+        {/* display-only categories (extraCategories.ts) */}
+        {extra && (
+          <section className="mt-4">
+            {extraShown.length === 0 && <p className="mt-6 text-sm text-white/50">Nothing here matches.</p>}
+            <motion.div layout className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4">
+              <AnimatePresence mode="popLayout">
+                {extraShown.map((p, i) => (
+                  <ExtraCard key={p.id} project={p} category={extra.label} index={i} onOpen={showDemoToast} />
                 ))}
               </AnimatePresence>
             </motion.div>
@@ -331,6 +373,23 @@ export default function Hub() {
       </main>
 
       <AnimatePresence>{picking && <BookPicker item={picking} onPick={(m) => openManual(picking, m)} onClose={() => setPicking(null)} />}</AnimatePresence>
+
+      {/* small notice, e.g. after tapping a display-only card */}
+      <div aria-live="polite" className="pointer-events-none fixed inset-x-0 bottom-6 z-40 flex justify-center px-5">
+        <AnimatePresence>
+          {toast && (
+            <motion.p
+              key={toast}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 6 }}
+              className="hud-panel rounded-full px-4 py-2 text-sm text-white/85"
+            >
+              {toast}
+            </motion.p>
+          )}
+        </AnimatePresence>
+      </div>
 
       {/* drag-and-drop overlay */}
       <AnimatePresence>
