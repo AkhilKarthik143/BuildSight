@@ -1,6 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // The Azure container image builds a self-contained server (Dockerfile sets BUILD_STANDALONE); Vercel doesn't need it.
+  ...(process.env.BUILD_STANDALONE ? { output: "standalone" as const } : {}),
   cacheComponents: true,
   partialPrefetching: true,
   turbopack: {
