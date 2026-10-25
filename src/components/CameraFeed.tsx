@@ -1,17 +1,21 @@
 "use client";
 
 // Full-screen camera background. Prefers the rear camera on phones.
-// Exposes a capture() that returns a resized JPEG data URL for the model.
+// Exposes a capture() that returns a resized JPEG data URL for the model, and a sample() that returns a
+// tiny grayscale frame for cheap motion sensing on the phone (no network).
 
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 
-export type CameraHandle = { capture: () => string | null };
+export type CameraHandle = { capture: () => string | null; sample: () => Uint8ClampedArray | null };
 
 const MAX_SIDE = 896; // enough detail for bricks, small enough to upload fast on venue Wi-Fi
+const SAMPLE_W = 32;
+const SAMPLE_H = 24;
 
 const CameraFeed = forwardRef<CameraHandle>(function CameraFeed(_, ref) {
   const video = useRef<HTMLVideoElement>(null);
   const [error, setError] = useState<string | null>(null);
+  const sampler = useRef<CanvasRenderingContext2D | null>(null);
 
   useEffect(() => {
     let stream: MediaStream | null = null;
@@ -51,6 +55,23 @@ const CameraFeed = forwardRef<CameraHandle>(function CameraFeed(_, ref) {
       canvas.height = Math.round(v.videoHeight * scale);
       canvas.getContext("2d")?.drawImage(v, 0, 0, canvas.width, canvas.height);
       return canvas.toDataURL("image/jpeg", 0.7);
+    },
+    sample() {
+      const v = video.current;
+      if (!v || !v.videoWidth) return null;
+      if (!sampler.current) {
+        const c = document.createElement("canvas");
+        c.width = SAMPLE_W;
+        c.height = SAMPLE_H;
+        sampler.current = c.getContext("2d", { willReadFrequently: true });
+      }
+      const ctx = sampler.current;
+      if (!ctx) return null;
+      ctx.drawImage(v, 0, 0, SAMPLE_W, SAMPLE_H);
+      const rgba = ctx.getImageData(0, 0, SAMPLE_W, SAMPLE_H).data;
+      const gray = new Uint8ClampedArray(SAMPLE_W * SAMPLE_H);
+      for (let i = 0; i < gray.length; i++) gray[i] = (rgba[i * 4] * 3 + rgba[i * 4 + 1] * 6 + rgba[i * 4 + 2]) / 10;
+      return gray;
     },
   }));
 

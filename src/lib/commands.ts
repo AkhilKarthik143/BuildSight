@@ -2,7 +2,7 @@
 // without asking Claude. Only whole phrases match: "what color is the piece in step 8?" is a question, not a command.
 
 export type Command =
-  | { kind: "next" | "back" | "repeat" | "check" | "stop" }
+  | { kind: "next" | "back" | "repeat" | "check" | "stop" | "locate" }
   | { kind: "goto"; step: number };
 
 const ONES: Record<string, number> = {
@@ -48,6 +48,8 @@ const FIXED: [Command["kind"], RegExp][] = [
     /^(?:check|check it|check this|check that|check my build|check my work|is this right|is that right|is it right|did i do it right|did i do this right|did i do that right|done|im done|i am done|all done|finished|im finished|i am finished|i finished)$/,
   ],
   ["stop", /^(?:stop|quiet|be quiet|stop talking|shh+|hush|silence)$/],
+  // "where am I?": find the step from the camera (src/lib/whereAmI.ts)
+  ["locate", /^(?:where am i|where was i|where are we|what step am i on|which step am i on|what step is this|which step is this|find my place|find where i am|figure out where i am|where am i at)$/],
 ];
 
 const NUM = "([a-z0-9 ]+?)";

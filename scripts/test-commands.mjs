@@ -17,6 +17,12 @@ const cases = [
   ["I'm done.", { kind: "check" }],
   ["finished", { kind: "check" }],
   ["Stop talking.", { kind: "stop" }],
+  // where am I (camera)
+  ["Where am I?", { kind: "locate" }],
+  ["Okay, what step am I on?", { kind: "locate" }],
+  ["Find my place please.", { kind: "locate" }],
+  ["Where does this piece go?", null],
+  ["What step is the red brick in?", null],
   // go to a step: digits and words
   ["Go to step 8.", { kind: "goto", step: 8 }],
   ["Step eight.", { kind: "goto", step: 8 }],
