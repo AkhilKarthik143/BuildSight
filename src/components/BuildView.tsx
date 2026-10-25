@@ -2,7 +2,6 @@
 "use client";
 
 import { AnimatePresence, motion } from "motion/react";
-import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
@@ -11,6 +10,8 @@ import type { CheckResult } from "@/app/api/check/route";
 import type { ExtractedStep } from "@/app/api/extract/route";
 import type { LocateResult } from "@/app/api/locate/route";
 import CameraFeed, { type CameraHandle } from "@/components/CameraFeed";
+import PieceHologram from "@/components/PieceHologram";
+import { cutOutPiece, type Cutout } from "@/lib/cutout";
 import ManualPanel from "@/components/ManualPanel";
 import VoicePanel from "@/components/VoicePanel";
 import ZoomViewer from "@/components/ZoomViewer";
@@ -20,7 +21,6 @@ import { openManualPdf, renderPage } from "@/lib/pdf";
 import { loadPrebuilt, type Prebuilt } from "@/lib/prebuilt";
 import { speak, stopSpeaking } from "@/lib/speech";
 
-const Hologram = dynamic(() => import("@/components/Hologram"), { ssr: false });
 
 type Phase = { kind: "loading"; label: string } | { kind: "ready" } | { kind: "error"; message: string } | { kind: "done" };
 type Check = { state: "checking" } | { state: "result"; result: CheckResult; frame: string } | { state: "error"; message: string };
@@ -84,6 +84,9 @@ function useIsPhone() {
     () => false,
   );
 }
+
+// A piece this big on the manual page (geometric mean of width and height, as a share of the page) fills the hologram.
+const HOLO_FULL_SIZE = 0.09;
 
 // How many pages ahead to read in the background, and how many Claude calls may run at once.
 const LOOKAHEAD = 6;
@@ -174,6 +177,7 @@ export default function BuildView() {
   const [stepIdx, setStepIdx] = useState(0);
   const [phase, setPhase] = useState<Phase>({ kind: "loading", label: "Opening manual" });
   const [target, setTarget] = useState<string | null>(null);
+  const [targetKey, setTargetKey] = useState<string | null>(null); // which step `target` was cut for
   const [previous, setPrevious] = useState<string | null>(null);
   const [check, setCheck] = useState<Check | null>(null);
   const [muted, setMuted] = useState(false);
@@ -205,10 +209,9 @@ export default function BuildView() {
   const step = steps[stepIdx] as ExtractedStep | undefined;
   const part = step?.parts[selectedPart ?? 0];
 
-  function selectPart(i: number) {
-    if (!step || !target) return;
-    if (selectedPart === i) return setSelection(null);
-    setSelection({ key: stepKey, idx: i });
+  // Finds part i of this step in the manual picture (once per part; shared by tap-to-find and the hologram).
+  function locatePart(i: number): Promise<LocateResult | null> | null {
+    if (!step || !target || targetKey !== stepKey || !step.parts[i]) return null;
     const key = `${stepKey}-${i}`;
     let job = located.current.get(key);
     if (!job) {
@@ -220,6 +223,16 @@ export default function BuildView() {
         .catch(() => null);
       located.current.set(key, job);
     }
+    return job;
+  }
+
+  function selectPart(i: number) {
+    if (!step || !target) return;
+    if (selectedPart === i) return setSelection(null);
+    setSelection({ key: stepKey, idx: i });
+    const key = `${stepKey}-${i}`;
+    const job = locatePart(i);
+    if (!job) return;
     const image = target;
     job.then(async (result) => {
       const pieceImage = result?.callout ? await crop(image, result.callout, 0.03) : null;
@@ -295,13 +308,65 @@ export default function BuildView() {
   useEffect(() => {
     if (!pageImage || !step) return;
     let cancelled = false;
-    crop(pageImage, step.box).then((t) => !cancelled && setTarget(t));
+    const key = `${page}-${stepIdx}`;
+    crop(pageImage, step.box).then((t) => {
+      if (cancelled) return;
+      setTarget(t);
+      setTargetKey(key);
+    });
     const prev = steps[stepIdx - 1];
     (prev ? crop(pageImage, prev.box) : Promise.resolve(null)).then((p) => !cancelled && setPrevious(p));
     return () => {
       cancelled = true;
     };
-  }, [pageImage, step, steps, stepIdx]);
+  }, [pageImage, step, steps, stepIdx]); // eslint-disable-line react-hooks/exhaustive-deps -- page changes come with a new pageImage
+
+  // 4. hologram of the next (or tapped) part: the real piece cut out of the manual's parts box.
+  const holoIdx = selectedPart ?? 0;
+  const holoKey = `${stepKey}-${holoIdx}`;
+  const holos = useRef(new Map<string, Promise<{ cut: Cutout | null; size: number }>>());
+  const [holo, setHolo] = useState<{ key: string; cut: Cutout | null; size: number } | null>(null);
+  useEffect(() => {
+    if (phase.kind !== "ready" || !step || !target || targetKey !== stepKey) return;
+    let cancelled = false;
+    let job = holos.current.get(holoKey);
+    if (!job) {
+      const found = locatePart(holoIdx);
+      if (!found || !pageImage) return;
+      // Cut from the 2400 px page when the manual has one (sharper), else from the page image on screen.
+      const hires = doc?.prebuilt?.pages[String(page)]?.length ? `/steps/${doc.prebuilt.id}/hi/${page}.jpg` : null;
+      const source = hires ?? pageImage;
+      const box = step.box;
+      job = found
+        .then(async (result) => {
+          const c = result?.callout;
+          if (!c) return { cut: null, size: 0 };
+          // The callout box is relative to the step picture; map it onto the whole page (same padding as crop()).
+          const tx = Math.max(0, box.x - 0.02);
+          const ty = Math.max(0, box.y - 0.02);
+          const tw = Math.min(box.w + 0.04, 1 - tx);
+          const th = Math.min(box.h + 0.04, 1 - ty);
+          const onPage = { x: tx + c.x * tw, y: ty + c.y * th, w: c.w * tw, h: c.h * th };
+          const pad = 0.008;
+          const cut = await cutOutPiece(await crop(source, onPage, pad).catch(() => crop(pageImage, onPage, pad)));
+          if (!cut) return { cut: null, size: 0 };
+          // Size on the manual page, so pieces keep their proportions to each other from step to step.
+          const cropW = Math.min(onPage.w + 2 * pad, 1 - Math.max(0, onPage.x - pad));
+          const cropH = Math.min(onPage.h + 2 * pad, 1 - Math.max(0, onPage.y - pad));
+          const size = Math.max(0.42, Math.min(1, Math.sqrt(cut.width * cropW * cut.height * cropH) / HOLO_FULL_SIZE));
+          return { cut, size };
+        })
+        .catch(() => ({ cut: null, size: 0 }));
+      holos.current.set(holoKey, job);
+    }
+    job.then((d) => !cancelled && setHolo({ key: holoKey, ...d }));
+    return () => {
+      cancelled = true;
+    };
+    // locatePart reads the same step/target values listed here
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase.kind, step, target, targetKey, stepKey, holoKey, pageImage, doc, page]);
+  const holoState: "scanning" | "ready" | "none" = holo?.key === holoKey ? (holo.cut ? "ready" : "none") : "scanning";
 
   // 4. read each new step aloud
   useEffect(() => {
@@ -600,12 +665,16 @@ export default function BuildView() {
                 </motion.div>
               )}
             </AnimatePresence>
-            <div className={`relative shrink-0 ${selectedPart != null ? "h-28 w-28 sm:h-40 sm:w-40" : "h-36 w-36 sm:h-48 sm:w-48"}`}>
-              <Hologram part={part} />
-              <span className="absolute -bottom-3 left-1/2 -translate-x-1/2 whitespace-nowrap text-[11px] font-medium text-sky-200/80">
-                {selectedPart != null ? "Shape" : "Next part"}
-              </span>
-            </div>
+            {holoState !== "none" && (
+              <div className={`relative shrink-0 ${selectedPart != null ? "h-28 w-28 sm:h-40 sm:w-40" : "h-36 w-36 sm:h-48 sm:w-48"}`}>
+                <PieceHologram state={holoState === "ready" ? "ready" : "scanning"} cutout={holo?.cut} size={holo?.size} pieceKey={holoKey} />
+                {holoState === "ready" && check?.state !== "checking" && (
+                  <span className="absolute -bottom-3 left-1/2 -translate-x-1/2 whitespace-nowrap text-[11px] font-medium text-sky-200/80">
+                    {selectedPart != null ? "This piece" : "Next part"}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
         )}
 
