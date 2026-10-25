@@ -33,7 +33,8 @@ const CameraFeed = forwardRef<CameraHandle>(function CameraFeed(_, ref) {
       }
       try {
         stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+          // 1280x720 is plenty: photos for Claude are at most 896 px, and a 1080p stream costs phones more to decode and draw
+          video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } },
           audio: false,
         });
         if (cancelled) return stream.getTracks().forEach((t) => t.stop());

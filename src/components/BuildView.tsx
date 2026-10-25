@@ -24,6 +24,7 @@ import { openManualPdf, renderPage } from "@/lib/pdf";
 import { loadPrebuilt, type Prebuilt } from "@/lib/prebuilt";
 import { speak, speaker, stopSpeaking } from "@/lib/speech";
 import { AUTO_MIN_CONFIDENCE, changed, decide, MAX_TILES, whereAmI, type Tile } from "@/lib/whereAmI";
+import { encodeCanvas } from "@/lib/encode";
 
 
 type Phase = { kind: "loading"; label: string } | { kind: "ready" } | { kind: "error"; message: string } | { kind: "done" };
@@ -47,7 +48,7 @@ async function stepThumbs(pageImage: string, boxes: ExtractedStep["box"][], pad 
     canvas.width = Math.max(1, Math.round(w * scale));
     canvas.height = Math.max(1, Math.round(h * scale));
     canvas.getContext("2d")?.drawImage(img, x, y, w, h, 0, 0, canvas.width, canvas.height);
-    out.push(canvas.toDataURL("image/jpeg", 0.8));
+    out.push(await encodeCanvas(canvas, "image/jpeg", 0.8));
   }
   return out;
 }
@@ -68,7 +69,7 @@ async function crop(pageImage: string, box: ExtractedStep["box"], pad = 0.02): P
   canvas.width = Math.min(w, img.width - x);
   canvas.height = Math.min(h, img.height - y);
   canvas.getContext("2d")?.drawImage(img, x, y, canvas.width, canvas.height, 0, 0, canvas.width, canvas.height);
-  return canvas.toDataURL("image/jpeg", 0.75);
+  return encodeCanvas(canvas, "image/jpeg", 0.75);
 }
 
 // Draws a light percentage grid on an image. Claude places boxes far more accurately with it.
@@ -98,7 +99,7 @@ async function withGrid(src: string): Promise<string> {
     g.fillText(String(i * 10), x + 2, 11);
     g.fillText(String(i * 10), 2, y - 2);
   }
-  return canvas.toDataURL("image/jpeg", 0.75);
+  return encodeCanvas(canvas, "image/jpeg", 0.75);
 }
 
 // "Step 8" or, for a panel inside a step, "Step 8 · 2 of 4".
@@ -584,24 +585,34 @@ export default function BuildView() {
 
   // Once a step is up, read the rest of the book in the background, two pages at a time (so the page in view
   // never waits), so "where am I?" can compare against every step. Pre-read manuals are instant.
+  // Phones read one page at a time with a short rest between pages, and the screen re-lists the read pages at
+  // most every 2 s: rendering and re-rendering for every page made the whole app stutter while a book was read.
   const ready = phase.kind === "ready";
   useEffect(() => {
     if (!reader || !doc || !ready) return;
     let stopped = false;
     let next = 1;
+    let shown = 0;
+    const show = () => {
+      if (stopped) return;
+      shown = Date.now();
+      setReadCount(reader.count());
+    };
     const lane = async () => {
       while (!stopped && next <= doc.numPages) {
         const p = next++;
         await reader(p).steps.catch(() => {});
-        if (!stopped) setReadCount(reader.count());
+        if (Date.now() - shown > 2000) show();
+        if (isPhone) await new Promise((r) => setTimeout(r, 250));
       }
+      show();
     };
     lane();
-    lane();
+    if (!isPhone) lane();
     return () => {
       stopped = true;
     };
-  }, [reader, doc, ready]);
+  }, [reader, doc, ready, isPhone]);
 
   // Opens a tile's step: on this page at once, otherwise opens its page at that step.
   const openTile = useCallback(

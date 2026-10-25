@@ -12,6 +12,7 @@
 // with); each tile remembers its page and printed step number, since sub-builds restart at step 1.
 
 import type { BrokenTile, WhereAmIResult } from "@/app/api/where-am-i/route";
+import { encodeCanvas } from "@/lib/encode";
 
 export type Tile = { tile: number; page: number; number: number; image: string };
 
@@ -79,8 +80,7 @@ async function drawSheet(group: Tile[]): Promise<string> {
     ctx.font = "bold 18px sans-serif";
     ctx.fillText(String(t.tile), x + 6, y + 19);
   }
-  await new Promise((r) => setTimeout(r, 0)); // let a frame through before the JPEG encode
-  return canvas.toDataURL("image/jpeg", 0.8);
+  return encodeCanvas(canvas, "image/jpeg", 0.8);
 }
 
 // ── 2. Ask the server ───────────────────────────────────────────────────────
