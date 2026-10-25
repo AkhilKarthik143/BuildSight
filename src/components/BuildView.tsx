@@ -9,6 +9,7 @@ import type { PDFDocumentProxy } from "pdfjs-dist";
 import type { CheckResult } from "@/app/api/check/route";
 import type { ExtractedStep } from "@/app/api/extract/route";
 import type { LocateResult } from "@/app/api/locate/route";
+import type { PartMark } from "@/components/HighlightBox";
 import CameraFeed, { type CameraHandle } from "@/components/CameraFeed";
 import PieceHologram from "@/components/PieceHologram";
 import { cutOutPiece, type Cutout } from "@/lib/cutout";
@@ -341,23 +342,46 @@ export default function BuildView() {
     };
   }, [pageImage, step, steps, stepIdx]); // eslint-disable-line react-hooks/exhaustive-deps -- page changes come with a new pageImage
 
-  // 4. hologram of the next (or tapped) part: the real piece cut out of the manual's parts box.
-  const holoIdx = selectedPart ?? 0;
-  const holoKey = `${stepKey}-${holoIdx}`;
-  const holos = useRef(new Map<string, Promise<{ cut: Cutout | null; size: number }>>());
-  const [holo, setHolo] = useState<{ key: string; cut: Cutout | null; size: number } | null>(null);
+  // 4. every part of this step, found in the manual's parts box at once (one /api/locate call per part, in
+  // parallel, cached), so all parts are boxed on the manual picture and shown as holograms without tapping.
+  const MAX_PARTS = 6;
+  const [locs, setLocs] = useState<{ key: string; results: (LocateResult | null)[] } | null>(null);
   useEffect(() => {
     if (phase.kind !== "ready" || !step || !target || targetKey !== stepKey) return;
     let cancelled = false;
-    let job = holos.current.get(holoKey);
-    if (!job) {
-      const found = locatePart(holoIdx);
-      if (!found || !pageImage) return;
-      // Cut from the 2400 px page when the manual has one (sharper), else from the page image on screen.
-      const hires = doc?.prebuilt?.pages[String(page)]?.length ? `/steps/${doc.prebuilt.id}/hi/${page}.jpg` : null;
-      const source = hires ?? pageImage;
-      const box = step.box;
-      job = found
+    const jobs = step.parts.slice(0, MAX_PARTS).map((_, i) => locatePart(i) ?? Promise.resolve(null));
+    Promise.all(jobs).then((results) => !cancelled && setLocs({ key: stepKey, results }));
+    return () => {
+      cancelled = true;
+    };
+    // locatePart reads the same step/target values listed here
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase.kind, step, target, targetKey, stepKey]);
+  const stepLocs = locs?.key === stepKey ? locs.results : null;
+  const marks: PartMark[] | undefined = stepLocs?.map((r, i) => ({
+    callout: r?.callout ?? null,
+    placed: r?.placed ?? null,
+    label: i + 1,
+    dim: selectedPart != null && selectedPart !== i,
+  }));
+
+  // Holograms of every part: the real piece cut out of the manual's parts box, at the manual's scale.
+  const holos = useRef(new Map<string, Promise<{ cut: Cutout | null; size: number }>>());
+  const [holoList, setHoloList] = useState<{ key: string; items: { cut: Cutout | null; size: number }[] } | null>(null);
+  useEffect(() => {
+    if (phase.kind !== "ready" || !step || !target || targetKey !== stepKey || !pageImage) return;
+    let cancelled = false;
+    // Cut from the 2400 px page when the manual has one (sharper), else from the page image on screen.
+    const hires = doc?.prebuilt?.pages[String(page)]?.length ? `/steps/${doc.prebuilt.id}/hi/${page}.jpg` : null;
+    const source = hires ?? pageImage;
+    const box = step.box;
+    const holoFor = (i: number): Promise<{ cut: Cutout | null; size: number }> => {
+      const key = `${stepKey}-${i}`;
+      const cached = holos.current.get(key);
+      if (cached) return cached;
+      const found = locatePart(i);
+      if (!found) return Promise.resolve({ cut: null, size: 0 });
+      const job = found
         .then(async (result) => {
           const c = result?.callout;
           if (!c) return { cut: null, size: 0 };
@@ -377,16 +401,18 @@ export default function BuildView() {
           return { cut, size };
         })
         .catch(() => ({ cut: null, size: 0 }));
-      holos.current.set(holoKey, job);
-    }
-    job.then((d) => !cancelled && setHolo({ key: holoKey, ...d }));
+      holos.current.set(key, job);
+      return job;
+    };
+    Promise.all(step.parts.slice(0, MAX_PARTS).map((_, i) => holoFor(i))).then((items) => !cancelled && setHoloList({ key: stepKey, items }));
     return () => {
       cancelled = true;
     };
     // locatePart reads the same step/target values listed here
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase.kind, step, target, targetKey, stepKey, holoKey, pageImage, doc, page]);
-  const holoState: "scanning" | "ready" | "none" = holo?.key === holoKey ? (holo.cut ? "ready" : "none") : "scanning";
+  }, [phase.kind, step, target, targetKey, stepKey, pageImage, doc, page]);
+  const holoItems = holoList?.key === stepKey ? holoList.items : null;
+  const holoState: "scanning" | "ready" | "none" = !holoItems ? "scanning" : holoItems.some((h) => h.cut) ? "ready" : "none";
 
   // 4. read each new step aloud
   useEffect(() => {
@@ -752,8 +778,7 @@ export default function BuildView() {
             target={target}
             stepNumber={step?.number}
             glow={showManual}
-            callout={highlight?.result?.callout}
-            placed={highlight?.result?.placed}
+            marks={marks}
             compact={compact}
             defaultClassName={`absolute right-3 top-20 z-10 transition-[width] duration-300 sm:right-6 sm:top-24 sm:w-72 ${compact ? "w-24" : selectedPart != null ? "w-44" : "w-36"}`}
             onOpen={() => setZoomOpen(true)}
@@ -771,8 +796,7 @@ export default function BuildView() {
             stepNumber={step?.number}
             glow={showManual}
             onGlowChange={setShowManual}
-            callout={highlight?.result?.callout}
-            placed={highlight?.result?.placed}
+            marks={marks}
             onClose={() => setZoomOpen(false)}
           />
         )}
@@ -820,7 +844,7 @@ export default function BuildView() {
         {phase.kind === "ready" && part && !compact && (
           <div className="flex items-end justify-center gap-3 sm:justify-start">
             <AnimatePresence>
-              {selectedPart != null && (
+              {selectedPart != null && step && step.parts.length === 1 && (
                 <motion.div
                   key={partKey}
                   initial={{ opacity: 0, scale: 0.9, x: -8 }}
@@ -843,14 +867,34 @@ export default function BuildView() {
                 </motion.div>
               )}
             </AnimatePresence>
-            {holoState !== "none" && (
-              <div className={`relative shrink-0 ${selectedPart != null ? "h-28 w-28 sm:h-40 sm:w-40" : "h-36 w-36 sm:h-48 sm:w-48"}`}>
-                <PieceHologram state={holoState === "ready" ? "ready" : "scanning"} cutout={holo?.cut} size={holo?.size} pieceKey={holoKey} />
-                {holoState === "ready" && check?.state !== "checking" && (
-                  <span className="absolute -bottom-3 left-1/2 -translate-x-1/2 whitespace-nowrap text-[11px] font-medium text-sky-200/80">
-                    {selectedPart != null ? "This piece" : "Next part"}
-                  </span>
-                )}
+            {holoState !== "none" && step && (
+              // Every part of the step as a hologram, numbered to match its boxes on the manual picture. Tap to spotlight one.
+              <div className="flex max-w-full items-end gap-1 overflow-x-auto pb-4 [scrollbar-width:none] sm:gap-2">
+                {step.parts.slice(0, MAX_PARTS).map((p, i) => {
+                  const h = holoItems?.[i];
+                  if (holoItems && !h?.cut) return null; // couldn't cut this one out of the manual
+                  const many = step.parts.length > 1;
+                  const focused = selectedPart === i;
+                  return (
+                    <button
+                      key={`${stepKey}-${i}`}
+                      onClick={() => selectPart(i)}
+                      aria-pressed={focused}
+                      aria-label={`${p.name}, ${p.qty} needed`}
+                      className={`relative shrink-0 rounded-2xl transition ${
+                        many ? (focused ? "h-28 w-28 sm:h-36 sm:w-36" : "h-24 w-24 sm:h-32 sm:w-32") : "h-36 w-36 sm:h-48 sm:w-48"
+                      } ${focused && many ? "bg-sky-300/10 ring-1 ring-sky-300/60" : ""} ${selectedPart != null && !focused ? "opacity-50" : ""}`}
+                    >
+                      <PieceHologram state={h?.cut ? "ready" : "scanning"} cutout={h?.cut} size={h?.size} pieceKey={`${stepKey}-${i}`} />
+                      {h?.cut && check?.state !== "checking" && (
+                        <span className="absolute -bottom-3 left-1/2 flex max-w-full -translate-x-1/2 items-center gap-1 whitespace-nowrap text-[11px] font-medium text-sky-200/80">
+                          {many && <span className="rounded bg-sky-300 px-1 text-[9px] font-bold leading-[14px] text-ink">{i + 1}</span>}
+                          <span className="truncate">{many ? `×${p.qty}` : selectedPart != null ? "This piece" : "Next part"}</span>
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             )}
           </div>
