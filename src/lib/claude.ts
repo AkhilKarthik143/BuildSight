@@ -12,8 +12,10 @@ type Ask = {
 };
 
 export class ClaudeError extends Error {
-  constructor(message: string, readonly status = 502) {
+  readonly status: number;
+  constructor(message: string, status = 502) {
     super(message);
+    this.status = status;
   }
 }
 
@@ -62,7 +64,7 @@ async function viaAnthropic({ system, parts, effort = "low" }: Ask): Promise<str
     if (e instanceof ClaudeError) throw e;
     if (e instanceof Anthropic.AuthenticationError) throw new ClaudeError("Anthropic rejected the API key.", 500);
     if (e instanceof Anthropic.RateLimitError) throw new ClaudeError("Rate limited by Anthropic. Try again in a moment.", 429);
-    if (e instanceof Anthropic.APIError) throw new ClaudeError(`Anthropic error ${e.status}: ${e.message}`);
+    if (e instanceof Anthropic.APIError) throw new ClaudeError(`Anthropic request failed (${e.status}).`);
     throw new ClaudeError("Couldn't reach Anthropic.");
   }
 }
@@ -86,8 +88,8 @@ async function viaOpenRouter({ system, parts }: Ask): Promise<string> {
         },
       ],
     }),
-  });
-  if (!res.ok) throw new ClaudeError(`OpenRouter error ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  }).catch(() => { throw new ClaudeError("Couldn't reach OpenRouter."); });
+  if (!res.ok) throw new ClaudeError(`OpenRouter request failed (${res.status}).`);
   const data = await res.json();
   return data?.choices?.[0]?.message?.content ?? "";
 }
@@ -149,7 +151,7 @@ export async function* streamClaude(system: string, turns: Turn[]): AsyncGenerat
   } catch (e) {
     if (e instanceof Anthropic.AuthenticationError) throw new ClaudeError("Anthropic rejected the API key.", 500);
     if (e instanceof Anthropic.RateLimitError) throw new ClaudeError("Rate limited by Anthropic. Try again in a moment.", 429);
-    if (e instanceof Anthropic.APIError) throw new ClaudeError(`Anthropic error ${e.status}: ${e.message}`);
+    if (e instanceof Anthropic.APIError) throw new ClaudeError(`Anthropic request failed (${e.status}).`);
     throw new ClaudeError("Couldn't reach Anthropic.");
   }
 }

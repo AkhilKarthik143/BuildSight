@@ -1,3 +1,4 @@
+import { withApiGuard } from "@/lib/apiGuard";
 // Voice assistant: answers the builder's spoken question, looking at the latest camera frame.
 // Streams the reply so the browser can start speaking after the first sentence.
 // Default: plain text. With `format: "json"`: one JSON object, transcript first, then an action the app carries out
@@ -55,7 +56,7 @@ function context(req: AssistRequest): string {
   return lines.join("\n");
 }
 
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
   let body: AssistRequest;
   try {
     body = await request.json();
@@ -92,7 +93,7 @@ export async function POST(request: Request) {
     first = await chunks.next();
   } catch (e) {
     const status = e instanceof ClaudeError ? e.status : 502;
-    return Response.json({ error: e instanceof Error ? e.message : "Claude failed." }, { status });
+    return Response.json({ error: e instanceof ClaudeError ? e.message : "Claude failed." }, { status });
   }
 
   const encoder = new TextEncoder();
@@ -115,3 +116,5 @@ export async function POST(request: Request) {
     headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store", "X-Accel-Buffering": "no" },
   });
 }
+
+export const POST = withApiGuard("assist", handlePOST);

@@ -1,3 +1,4 @@
+import { withApiGuard } from "@/lib/apiGuard";
 // "Where am I?" for a half-built or broken build. The phone sends contact sheets of the manual's step
 // pictures (src/lib/whereAmI.ts) and a camera frame. Tiles are numbered 1, 2, 3... in book order, not by
 // the printed step number, because sub-builds restart their numbering. Claude returns the furthest tile
@@ -35,7 +36,7 @@ function isImage(s: unknown): s is string {
   return typeof s === "string" && s.startsWith("data:image/") && s.length <= MAX_IMAGE_CHARS;
 }
 
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
   let body: WhereAmIRequest;
   try {
     body = await request.json();
@@ -61,7 +62,7 @@ export async function POST(request: Request) {
     const r = firstJsonObject(text) as { completed_tile?: unknown; confidence?: unknown; broken?: unknown } | null;
     const tile = Number(r?.completed_tile);
     if (!r || !valid.has(tile) || typeof r.confidence !== "number") {
-      return Response.json({ error: "Couldn't tell where you are.", raw: text.slice(0, 300) }, { status: 502 });
+      return Response.json({ error: "Couldn't tell where you are." }, { status: 502 });
     }
     const broken = (Array.isArray(r.broken) ? r.broken : [])
       .map((b: Record<string, unknown>) => ({ tile: Number(b?.tile), part: String(b?.part ?? ""), problem: String(b?.problem ?? ""), fix: String(b?.fix ?? "") }))
@@ -74,3 +75,5 @@ export async function POST(request: Request) {
     return Response.json({ error: err.message }, { status: err.status });
   }
 }
+
+export const POST = withApiGuard("where-am-i", handlePOST);

@@ -1,3 +1,4 @@
+import { withApiGuard } from "@/lib/apiGuard";
 // Answers a question about one camera frame. The key stays on the server.
 
 import { askClaude, ClaudeError } from "@/lib/claude";
@@ -9,7 +10,7 @@ const SYSTEM_PROMPT =
   "through an overhead camera. Answer in at most two short sentences, as if spoken aloud. " +
   "Name pieces by color and size (for example 'red 2x4 brick'). If you can't see clearly, say so.";
 
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
   let body: { image?: string; question?: string };
   try {
     body = await request.json();
@@ -38,3 +39,5 @@ export async function POST(request: Request) {
     return Response.json({ error: err.message }, { status: err.status });
   }
 }
+
+export const POST = withApiGuard("vision", handlePOST);

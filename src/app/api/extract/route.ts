@@ -1,3 +1,4 @@
+import { withApiGuard } from "@/lib/apiGuard";
 // Reads one manual page image and returns the build steps on it.
 
 import { askClaude, ClaudeError } from "@/lib/claude";
@@ -104,7 +105,7 @@ function parse(text: string): ExtractedStep[] | null {
   }
 }
 
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
   let page: unknown;
   try {
     page = (await request.json())?.page;
@@ -129,11 +130,12 @@ export async function POST(request: Request) {
       });
       const steps = parse(lastRaw);
       if (steps) return Response.json({ steps, latencyMs: Date.now() - started });
-      console.warn("[extract] unparseable reply:", lastRaw.slice(0, 400));
     }
   } catch (e) {
     const err = e instanceof ClaudeError ? e : new ClaudeError("Couldn't read that page.");
     return Response.json({ error: err.message }, { status: err.status });
   }
-  return Response.json({ error: "Couldn't read steps from that page.", raw: lastRaw.slice(0, 300) }, { status: 502 });
+  return Response.json({ error: "Couldn't read steps from that page." }, { status: 502 });
 }
+
+export const POST = withApiGuard("extract", handlePOST);

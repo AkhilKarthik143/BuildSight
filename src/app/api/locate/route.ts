@@ -1,3 +1,4 @@
+import { withApiGuard } from "@/lib/apiGuard";
 // Finds one part in a step's manual picture: where it's drawn in the parts box, and where it goes on the build.
 
 import { askClaude, ClaudeError } from "@/lib/claude";
@@ -35,7 +36,7 @@ function findText(part: string, parts: ReturnType<typeof readPartLines>): string
   return `Find this part: ${part}\nAll parts in this step's parts box:\n${partsPrompt(parts)}\n${LOOKALIKE_RULE} Box only the named part; never box a different one.`;
 }
 
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
   // parts (optional): every part of this step, described by appearance, so lookalikes in the parts box aren't confused
   let body: { image?: unknown; part?: unknown; parts?: unknown };
   try {
@@ -68,3 +69,5 @@ export async function POST(request: Request) {
     return Response.json({ error: err.message }, { status: err.status });
   }
 }
+
+export const POST = withApiGuard("locate", handlePOST);

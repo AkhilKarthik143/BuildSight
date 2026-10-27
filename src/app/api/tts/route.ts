@@ -1,3 +1,4 @@
+import { withApiGuard } from "@/lib/apiGuard";
 // Text to speech with Cartesia. Streams raw audio (32-bit float PCM, mono, 24 kHz) straight through to the browser,
 // which starts playing as the first bytes arrive. The key stays on the server.
 
@@ -8,7 +9,7 @@ const VOICE = process.env.CARTESIA_VOICE_ID || "4bc3cb8c-adb9-4bb8-b5d5-cbbef950
 const SAMPLE_RATE = 24000; // the browser player in lib/speech.ts assumes this rate
 const MAX_CHARS = 1500;
 
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
   const key = process.env.CARTESIA_API_KEY?.trim();
   if (!key) return Response.json({ error: "Voice isn't set up on the server (missing Cartesia key)." }, { status: 503 });
 
@@ -42,3 +43,5 @@ export async function POST(request: Request) {
     headers: { "Content-Type": "audio/pcm", "Cache-Control": "no-store", "X-Accel-Buffering": "no" },
   });
 }
+
+export const POST = withApiGuard("tts", handlePOST);

@@ -1,3 +1,4 @@
+import { withApiGuard } from "@/lib/apiGuard";
 // Step check: compares the camera frame to the manual's picture for this step
 // (and the previous step), and says whether the step is done and what's wrong.
 
@@ -89,7 +90,7 @@ function parseResult(text: string): CheckResult | null {
   }
 }
 
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
   let body: CheckRequest;
   try {
     body = await request.json();
@@ -123,10 +124,12 @@ export async function POST(request: Request) {
   try {
     const text = await askClaude({ system: SYSTEM_PROMPT, parts });
     const result = parseResult(text);
-    if (!result) return Response.json({ error: "Model reply wasn't valid JSON.", raw: text.slice(0, 500) }, { status: 502 });
+    if (!result) return Response.json({ error: "Model reply wasn't valid JSON." }, { status: 502 });
     return Response.json({ ...result, latencyMs: Date.now() - started });
   } catch (e) {
     const err = e instanceof ClaudeError ? e : new ClaudeError("Check failed.");
     return Response.json({ error: err.message }, { status: err.status });
   }
 }
+
+export const POST = withApiGuard("check", handlePOST);

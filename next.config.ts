@@ -25,6 +25,11 @@ const nextConfig: NextConfig = {
   // Manuals never change: let Vercel's CDN keep them, so only the first open hits lego.com / ikea.com.
   async headers() {
     return [
+      { source: "/:path*", headers: [
+        { key: "X-Content-Type-Options", value: "nosniff" },
+        { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+        { key: "Permissions-Policy", value: "camera=(self), microphone=(self)" },
+      ] },
       {
         source: "/manual-pdf/:path*",
         headers: [

@@ -39,11 +39,11 @@ Four workstreams: (1) CI + docs, (2) API hardening (unauthenticated, spend-beari
 - [x] Replace stub `README.md` with a real one: what it is, demo flow, architecture (data flow: PDF → extract → step records → camera check → voice), env vars from `.env.example` (no secret values), scripts table (dev/test/typecheck/build/catalog/preread), deploy pointer to DEPLOY-AZURE.md, known limitations, CREDITS pointer. Keep DECISIONS.md as-is
 
 **Phase 2: API hardening** (no behavior change for normal use)
-- [ ] `src/lib/rateLimit.ts`: in-memory token bucket keyed by client IP (from `x-forwarded-for`, first hop) + route name; per-route limits (cheap: speech-token, search; expensive: check, assist, extract, locate, where-am-i, vision, tts); returns `{ok, retryAfterSec}`; bounded memory (evict stale keys); document that it is per-instance
-- [ ] `src/lib/apiGuard.ts`: wrapper used by every route: rate limit → 429 with `Retry-After`; reject bodies over a per-route max (e.g. 8 MB for frames, 64 KB for text) with 413; JSON parse errors → 400 not 500; never echo upstream error bodies or keys in responses
-- [ ] Apply the guard to all 9 routes; keep response shapes for success cases identical (existing UI must keep working)
-- [ ] Validate and clamp inputs in `check`, `assist`, `locate`, `where-am-i`, `tts` (types, max string lengths, max frame count, allowed image mime/prefix); `search` must only fetch lego.com / ikea.com hosts (allowlist) and reject anything else
-- [ ] Add `X-Content-Type-Options` and `Referrer-Policy` headers in `next.config.ts` without breaking camera/mic (`Permissions-Policy` must still allow camera and microphone for self)
+- [x] `src/lib/rateLimit.ts`: in-memory token bucket keyed by client IP (from `x-forwarded-for`, first hop) + route name; per-route limits (cheap: speech-token, search; expensive: check, assist, extract, locate, where-am-i, vision, tts); returns `{ok, retryAfterSec}`; bounded memory (evict stale keys); document that it is per-instance
+- [x] `src/lib/apiGuard.ts`: wrapper used by every route: rate limit → 429 with `Retry-After`; reject bodies over a per-route max (e.g. 8 MB for frames, 64 KB for text) with 413; JSON parse errors → 400 not 500; never echo upstream error bodies or keys in responses
+- [x] Apply the guard to all 9 routes; keep response shapes for success cases identical (existing UI must keep working)
+- [x] Validate and clamp inputs in `check`, `assist`, `locate`, `where-am-i`, `tts` (types, max string lengths, max frame count, allowed image mime/prefix); `search` must only fetch lego.com / ikea.com hosts (allowlist) and reject anything else
+- [x] Add `X-Content-Type-Options` and `Referrer-Policy` headers in `next.config.ts` without breaking camera/mic (`Permissions-Policy` must still allow camera and microphone for self)
 
 **Phase 3: Split `BuildView.tsx` (behavior-preserving)**
 - [ ] Extract in small commits, running tests after each: camera/motion-stillness logic, check-build flow + result state, auto-mode controller, voice/command wiring, step navigation + persistence, overlays/panels as components under `src/components/build/`
@@ -51,7 +51,7 @@ Four workstreams: (1) CI + docs, (2) API hardening (unauthenticated, spend-beari
 - [ ] Pure logic that moves into `src/lib` gets a test in the matching `scripts/test-*.mjs`
 
 **Phase 4: Tests + offline eval**
-- [ ] `scripts/test-api-guard.mjs`: rate limiter (burst, refill, per-IP isolation, eviction), body-size and JSON-error handling, host allowlist; add to `npm test`
+- [x] `scripts/test-api-guard.mjs`: rate limiter (burst, refill, per-IP isolation, eviction), body-size and JSON-error handling, host allowlist; add to `npm test`
 - [ ] `scripts/test-claude.mjs`: mock `fetch`; verify `src/lib/claude.ts` picks Anthropic SDK path vs OpenRouter fallback by env, never sends `temperature`, surfaces errors without leaking keys; add to `npm test`
 - [ ] Tests for `manuals.ts`, `catalog.ts`, `json.ts`, `whereAmI.ts` parsing (pure functions only); add to `npm test`
 - [ ] `scripts/eval-check.mjs`: offline eval of the pass/fail pipeline using recorded model outputs in `scripts/fixtures/check/*.json` (write 12+ cases: pass, issues, can_see false, low confidence, malformed JSON, refusal text) through `isPass()` / `checkVerdict()` / issue-box location logic; print a confusion table; exit non-zero on any mismatch; add `test:eval` script and include in `npm test`
@@ -115,3 +115,11 @@ BuildView baseline responsibilities / extraction plan (original line numbers):
 - 1215–1788: camera/header, overlays, panels and step card → BuildHeader, BuildOverlays, BuildStepCard, CheckResultPanel; BuildView composes them.
 
 Untested lib modules: claude, manuals, catalog, json, whereAmI, prebuilt, pdf, cutout, encode, listen, speech. Phase4 covers pure manual key/title helpers, catalog filters/conversions, JSON parsing, where-am-I reply parsing/decisions and Claude's mocked network boundary. DOM/media/PDF algorithms require browser-specific checks and remain outside pure unit coverage.
+
+### Phase 2 — API boundary
+- All nine routes are guarded before spending. Body streams are counted in bytes (including chunked/misreported lengths), with a 10-second read timeout. JSON/type failures return 400, body caps 413, rate rejection 429 + Retry-After. GET routes retain their method. Successful response formats/streams remain unchanged.
+- Caps: check/where-am-i 12 MiB total, extract/vision/assist/locate 8 MiB, tts 64 KiB. Per-image caps remain 4M characters (extract 6M); only JPEG/PNG/WebP/GIF base64 is accepted. where-am-i accepts at most 8 sheets of 20 tile numbers. Metadata arrays/strings are bounded; part quantities clamp at999, TTS keeps existing 1500-character truncation, history keeps last8. These caps accommodate the existing resized images, rather than nine simultaneous maximum-sized images.
+- Token buckets use first forwarded IP + route, with explicit burst/refill values in rateLimit.ts. 10,000-key bound, stale eviction and fail-closed new keys at capacity. Missing/invalid IP uses a shared bucket. Trusted ingress must overwrite x-forwarded-for; quotas are per process and restart/reset with it.
+- Search verifies HTTPS hosts and each redirect, rejects credentials/nonstandard ports/private hosts, caps upstream responses and times out fetches. The one fixed IKEA discovery endpoint is isolated from general URL allowance. Product PDF rewrites stay on fixed origins.
+- Provider errors and invalid model output no longer return upstream response text; Claude model/effort/token settings are unchanged. Added nosniff/referrer headers and explicit same-origin camera/mic permission.
+- Validation: original tests, lint and typecheck pass; new offline guard tests cover all wrappers, malicious inputs, byte limits, refill/eviction and forbidden redirects.
