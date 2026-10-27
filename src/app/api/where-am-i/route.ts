@@ -5,13 +5,11 @@ import { withApiGuard } from "@/lib/apiGuard";
 // the build has reached and any earlier tile that looks broken (a piece missing, wrong, moved or rotated).
 
 import { askClaude, ClaudeError, type Part } from "@/lib/claude";
-import { firstJsonObject } from "@/lib/json";
+import { parseWhereAmIResult } from "@/lib/whereAmIResult";
+export type { BrokenTile, WhereAmIResult } from "@/lib/whereAmIResult";
 
 const MAX_IMAGE_CHARS = 4_000_000;
 const MAX_SHEETS = 8;
-
-export type BrokenTile = { tile: number; part: string; problem: string; fix: string };
-export type WhereAmIResult = { completed_tile: number; confidence: number; broken: BrokenTile[] };
 
 type WhereAmIRequest = {
   frame?: string; // camera frame, data URL
@@ -59,16 +57,8 @@ async function handlePOST(request: Request) {
   try {
     // A hard visual comparison: keep thinking on (askClaude's default) at medium effort.
     const text = await askClaude({ system: SYSTEM_PROMPT, parts, effort: "medium" });
-    const r = firstJsonObject(text) as { completed_tile?: unknown; confidence?: unknown; broken?: unknown } | null;
-    const tile = Number(r?.completed_tile);
-    if (!r || !valid.has(tile) || typeof r.confidence !== "number") {
-      return Response.json({ error: "Couldn't tell where you are." }, { status: 502 });
-    }
-    const broken = (Array.isArray(r.broken) ? r.broken : [])
-      .map((b: Record<string, unknown>) => ({ tile: Number(b?.tile), part: String(b?.part ?? ""), problem: String(b?.problem ?? ""), fix: String(b?.fix ?? "") }))
-      .filter((b) => valid.has(b.tile) && b.tile > 0 && b.tile <= tile && b.problem)
-      .sort((a, b) => a.tile - b.tile);
-    const result: WhereAmIResult = { completed_tile: tile, confidence: Math.max(0, Math.min(1, r.confidence)), broken };
+    const result = parseWhereAmIResult(text, valid);
+    if (!result) return Response.json({ error: "Couldn't tell where you are." }, { status: 502 });
     return Response.json({ ...result, latencyMs: Date.now() - started });
   } catch (e) {
     const err = e instanceof ClaudeError ? e : new ClaudeError("Couldn't tell where you are.");

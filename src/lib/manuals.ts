@@ -34,7 +34,7 @@ const PDF = "pdf:";
 export async function listManuals(): Promise<Manual[]> {
   const ids = (await keys()).filter((k): k is string => typeof k === "string" && k.startsWith(MANUAL));
   const all = await Promise.all(ids.map((k) => get<Manual>(k)));
-  return all.filter((m): m is Manual => !!m).sort((a, b) => b.openedAt - a.openedAt);
+  return recentManuals(all);
 }
 
 export const getManual = (id: string) => get<Manual>(MANUAL + id);
@@ -43,8 +43,7 @@ export const getPdfBytes = (id: string) => get<ArrayBuffer>(PDF + id);
 
 export async function removeManual(id: string) {
   // Saved readings from every version (old ones are ignored but still take space).
-  const ours = new RegExp(`^steps:(v\\d+:)?${id}:`); // "steps:<id>:<page>" (v1) or "steps:v2:<id>:<page>"
-  const stepKeys = (await keys()).filter((k) => typeof k === "string" && ours.test(k));
+  const stepKeys = stepKeysFor(id, await keys());
   await Promise.all([del(MANUAL + id), del(PDF + id), ...stepKeys.map((k) => del(k))]);
 }
 
@@ -74,7 +73,7 @@ export async function addUpload(file: File): Promise<Manual> {
   const m: Manual = {
     id: newId(),
     source: "upload",
-    title: file.name.replace(/\.pdf$/i, "").replace(/[-_]+/g, " "),
+    title: uploadTitle(file.name),
     subtitle: `Uploaded · ${(file.size / 1_000_000).toFixed(1)} MB`,
     page: 1,
     addedAt: now,
@@ -83,4 +82,16 @@ export async function addUpload(file: File): Promise<Manual> {
   await set(PDF + m.id, await file.arrayBuffer());
   await saveManual(m);
   return m;
+}
+
+// Pure library helpers: no IndexedDB or File APIs needed to validate their behavior.
+export function recentManuals(all: (Manual | undefined)[]): Manual[] {
+  return all.filter((m): m is Manual => !!m).sort((a, b) => b.openedAt - a.openedAt);
+}
+export function uploadTitle(name: string): string {
+  return name.replace(/\.pdf$/i, "").replace(/[-_]+/g, " ");
+}
+export function stepKeysFor(id: string, storageKeys: unknown[]): string[] {
+  return storageKeys.filter((k): k is string => typeof k === "string" &&
+    (k.startsWith(`steps:${id}:`) || k.replace(/^steps:v\d+:/, "steps:").startsWith(`steps:${id}:`)));
 }

@@ -1,0 +1,10 @@
+{
+  "name": "bad-box",
+  "provenance": "hand-authored model-output regression fixture; not a real-photo observation",
+  "raw": "{\"can_see\": true, \"step_complete\": true, \"confidence\": 0.95, \"issues\": [{\"part\": \"red brick\", \"problem\": \"rotated\", \"fix\": \"Turn it\", \"kind\": \"orientation\", \"box\": {\"left\": 90, \"right\": 10, \"top\": 0, \"bottom\": 30}}], \"say\": \"Looks correct.\"}",
+  "expected": {
+    "verdict": "fix",
+    "pass": false,
+    "locations": []
+  }
+}

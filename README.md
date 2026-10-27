@@ -58,6 +58,7 @@ PDF/catalog → browser PDF rendering → `/api/extract` → cached step records
 | `npm run dev` | Development server |
 | `npm run lint` | ESLint |
 | `npm run typecheck` | Generate Next route types, then TypeScript |
+| `npm run test:eval` | Offline verdict/issue-box regression table from 18 stored fixtures |
 | `npm test` | Offline tests (no real API keys or provider calls) |
 | `npm run build` | Production build; Google Fonts may require network at build time |
 | `npm start` | Serve the production build |

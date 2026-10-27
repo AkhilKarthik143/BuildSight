@@ -1,0 +1,10 @@
+{
+  "name": "malformed-json",
+  "provenance": "hand-authored model-output regression fixture; not a real-photo observation",
+  "raw": "{\"can_see\":true,",
+  "expected": {
+    "verdict": "invalid",
+    "pass": false,
+    "locations": []
+  }
+}

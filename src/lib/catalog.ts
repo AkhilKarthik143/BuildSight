@@ -1,7 +1,7 @@
 // The browsable catalog, built by scripts/build-catalog.mjs (every item verified to have instructions).
 
-import data from "@/data/catalog.json";
-import type { ManualResult } from "@/lib/manuals";
+import data from "../data/catalog.json" with { type: "json" };
+import type { ManualResult } from "./manuals.ts";
 
 export type CatalogManual = { label: string; size?: string; pdfPath: string; coverUrl?: string };
 

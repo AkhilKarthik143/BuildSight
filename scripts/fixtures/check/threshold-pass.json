@@ -1,0 +1,10 @@
+{
+  "name": "threshold-pass",
+  "provenance": "hand-authored model-output regression fixture; not a real-photo observation",
+  "raw": "{\"can_see\": true, \"step_complete\": true, \"confidence\": 0.7, \"issues\": [], \"say\": \"Looks correct.\"}",
+  "expected": {
+    "verdict": "pass",
+    "pass": true,
+    "locations": []
+  }
+}

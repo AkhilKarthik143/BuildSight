@@ -52,9 +52,9 @@ Four workstreams: (1) CI + docs, (2) API hardening (unauthenticated, spend-beari
 
 **Phase 4: Tests + offline eval**
 - [x] `scripts/test-api-guard.mjs`: rate limiter (burst, refill, per-IP isolation, eviction), body-size and JSON-error handling, host allowlist; add to `npm test`
-- [ ] `scripts/test-claude.mjs`: mock `fetch`; verify `src/lib/claude.ts` picks Anthropic SDK path vs OpenRouter fallback by env, never sends `temperature`, surfaces errors without leaking keys; add to `npm test`
-- [ ] Tests for `manuals.ts`, `catalog.ts`, `json.ts`, `whereAmI.ts` parsing (pure functions only); add to `npm test`
-- [ ] `scripts/eval-check.mjs`: offline eval of the pass/fail pipeline using recorded model outputs in `scripts/fixtures/check/*.json` (write 12+ cases: pass, issues, can_see false, low confidence, malformed JSON, refusal text) through `isPass()` / `checkVerdict()` / issue-box location logic; print a confusion table; exit non-zero on any mismatch; add `test:eval` script and include in `npm test`
+- [x] `scripts/test-claude.mjs`: mock `fetch`; verify `src/lib/claude.ts` picks Anthropic SDK path vs OpenRouter fallback by env, never sends `temperature`, surfaces errors without leaking keys; add to `npm test`
+- [x] Tests for `manuals.ts`, `catalog.ts`, `json.ts`, `whereAmI.ts` parsing (pure functions only); add to `npm test`
+- [x] `scripts/eval-check.mjs`: offline eval of the pass/fail pipeline using recorded model outputs in `scripts/fixtures/check/*.json` (write 12+ cases: pass, issues, can_see false, low confidence, malformed JSON, refusal text) through `isPass()` / `checkVerdict()` / issue-box location logic; print a confusion table; exit non-zero on any mismatch; add `test:eval` script and include in `npm test`
 
 ### Validation
 - [ ] Run `npm run lint` and fix any issues
@@ -128,3 +128,9 @@ Untested lib modules: claude, manuals, catalog, json, whereAmI, prebuilt, pdf, c
 - Extracted auto preference stores/settings, image utilities, page reader, shared state types, viewport hook, labels and bounded queue without changing algorithms. Original suites, new helper tests, lint and typecheck pass.
 - Extracted shared build state, navigation/persistence, part guidance, step checks/countdowns, recognition, camera stillness/Auto Mode, and voice/shortcuts. All original test scripts remain unmodified. Hook dependency lists now explicitly include stable setter/ref inputs crossing module boundaries; ref aliases end in Ref for React compiler analysis. Removed the existing per-frame tuning console.log. Lint/typecheck/tests pass.
 - Extracted header, manual/photo overlays, step card and check-result panel with unchanged markup and existing component contracts. BuildView is now 45 lines; navigation and the step card are the largest modules (~323/347 lines). Lint/typecheck/all tests/build pass after extraction.
+
+### Phase 4 — offline coverage
+- Added network-mocked tests for both Claude transports, provider preference, streaming, refusal, payload settings (including absence of temperature), image validation and sanitized errors. Tests install their fetch stub and dummy credentials before importing the SDK. No live keys or provider calls.
+- Extracted check and where-am-I parsers into pure lib modules shared by the real routes and tests; reject non-finite model confidence. Normal model output semantics and all tuning values stay unchanged.
+- Added tests for manual title/key/sort helpers, catalog filters/conversions/order, JSON fences/escaped braces/partial output and recognition parsing/decisions. Manual cleanup now matches literal IDs, preventing regex metacharacters from selecting another manual's cached readings.
+- The eval has 18 hand-authored, stored model-output fixtures (pass, uncertain, mistakes, occlusion, invalid boxes, malformed JSON and refusal). No real-photo recordings were supplied, so these explicitly measure parser/verdict regressions, not empirical vision accuracy. Each fixture declares its provenance.

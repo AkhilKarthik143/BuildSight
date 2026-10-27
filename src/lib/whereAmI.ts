@@ -12,7 +12,7 @@
 // with); each tile remembers its page and printed step number, since sub-builds restart at step 1.
 
 import type { BrokenTile, WhereAmIResult } from "@/app/api/where-am-i/route";
-import { encodeCanvas } from "@/lib/encode";
+import { encodeCanvas } from "./encode.ts";
 
 export type Tile = { tile: number; page: number; number: number; image: string };
 
@@ -157,4 +157,4 @@ export function decide(
 // ── 4. Watching for changes (for automatic detection) ───────────────────────
 
 /** Share of pixels that changed between two small grayscale samples (shared with Auto Mode). */
-export { changed } from "@/lib/autoCheck";
+export { changed } from "./autoCheck.ts";
