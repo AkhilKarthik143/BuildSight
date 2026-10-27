@@ -1,0 +1,30 @@
+# Lint, typecheck, test, and build on every push and pull request.
+# The Azure image workflow (.github/workflows/azure-image.yml) is separate and only deploys main.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # Node 22 is the maintenance LTS line that matches this repo's @types/node 20 and Next 16.4.
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
