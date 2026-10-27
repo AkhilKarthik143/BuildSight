@@ -123,3 +123,6 @@ Untested lib modules: claude, manuals, catalog, json, whereAmI, prebuilt, pdf, c
 - Search verifies HTTPS hosts and each redirect, rejects credentials/nonstandard ports/private hosts, caps upstream responses and times out fetches. The one fixed IKEA discovery endpoint is isolated from general URL allowance. Product PDF rewrites stay on fixed origins.
 - Provider errors and invalid model output no longer return upstream response text; Claude model/effort/token settings are unchanged. Added nosniff/referrer headers and explicit same-origin camera/mic permission.
 - Validation: original tests, lint and typecheck pass; new offline guard tests cover all wrappers, malicious inputs, byte limits, refill/eviction and forbidden redirects.
+
+### Phase 3 — extraction checkpoints
+- Extracted auto preference stores/settings, image utilities, page reader, shared state types, viewport hook, labels and bounded queue without changing algorithms. Original suites, new helper tests, lint and typecheck pass.

@@ -1,418 +1,59 @@
 /* eslint-disable @next/next/no-img-element -- step pictures are data URLs rendered in the browser */
 "use client";
 
-import { AnimatePresence, motion } from "motion/react";
-import Link from "next/link";
-import { useParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import type { PDFDocumentProxy } from "pdfjs-dist";
 import type { CheckResult } from "@/app/api/check/route";
-import CheckErrorOverlay, { IssueBoxes, LiveIssueBoxes, WarnGlyph } from "@/components/CheckErrorOverlay";
-import { CATEGORY_TAG, checkVerdict, forStep, isPass, issueCategory, issueLabel, photoLabel, spokenIssues } from "@/lib/issueBox";
 import type { ExtractedStep } from "@/app/api/extract/route";
 import type { LocateResult } from "@/app/api/locate/route";
+import CameraFeed,{ type CameraHandle } from "@/components/CameraFeed";
+import CheckErrorOverlay,{ IssueBoxes,LiveIssueBoxes,WarnGlyph } from "@/components/CheckErrorOverlay";
 import type { PartMark } from "@/components/HighlightBox";
-import CameraFeed, { type CameraHandle } from "@/components/CameraFeed";
-import PieceHologram from "@/components/PieceHologram";
-import { describePart, partLines } from "@/lib/parts";
-import type { AssistAction } from "@/lib/assistReply";
-import { cutOutPiece, type Cutout } from "@/lib/cutout";
 import ManualPanel from "@/components/ManualPanel";
+import PieceHologram from "@/components/PieceHologram";
 import VoicePanel from "@/components/VoicePanel";
 import ZoomViewer from "@/components/ZoomViewer";
-import { matchCommand } from "@/lib/commands";
-import { getManual, getPageSteps, saveManual, savePageSteps, type Manual } from "@/lib/manuals";
-import { openManualPdf, renderPage } from "@/lib/pdf";
-import { loadPrebuilt, type Prebuilt } from "@/lib/prebuilt";
-import { speak, speaker, stopSpeaking } from "@/lib/speech";
-import { AUTO_MIN_CONFIDENCE, changed, decide, MAX_TILES, whereAmI, type Tile } from "@/lib/whereAmI";
-import { encodeCanvas } from "@/lib/encode";
+import type { AssistAction } from "@/lib/assistReply";
 import {
-  AUTO_CHANGE_THRESHOLD,
-  AUTO_MAX_MISSES,
-  AUTO_SPEAK_FIX_CONFIDENCE,
-  DEFAULT_SPEED,
-  describeTiming,
-  MANUAL_ADVANCE_MS,
-  presetAt,
-  SPEED_OF,
-  stepSpeed,
-  timingFor,
-  type AutoPreset,
-  type AutoTiming,
-  markChecked,
-  newWatch,
-  recordMiss,
-  resetForStep,
-  tick,
+AUTO_CHANGE_THRESHOLD,
+AUTO_MAX_MISSES,
+AUTO_SPEAK_FIX_CONFIDENCE,
+describeTiming,
+MANUAL_ADVANCE_MS,
+markChecked,
+newWatch,
+presetAt,
+recordMiss,
+resetForStep,
+SPEED_OF,
+stepSpeed,
+tick,
+timingFor,
+type AutoTiming
 } from "@/lib/autoCheck";
+import { matchCommand } from "@/lib/commands";
+import { cutOutPiece,type Cutout } from "@/lib/cutout";
+import { CATEGORY_TAG,checkVerdict,forStep,isPass,issueCategory,issueLabel,photoLabel,spokenIssues } from "@/lib/issueBox";
+import { getManual,saveManual,type Manual } from "@/lib/manuals";
+import { describePart,partLines } from "@/lib/parts";
+import { openManualPdf } from "@/lib/pdf";
+import { loadPrebuilt } from "@/lib/prebuilt";
+import { speak,speaker,stopSpeaking } from "@/lib/speech";
+import { AUTO_MIN_CONFIDENCE,changed,decide,MAX_TILES,whereAmI,type Tile } from "@/lib/whereAmI";
+import { AnimatePresence,motion } from "motion/react";
+import Link from "next/link";
+import { useParams } from "next/navigation";
+import { useCallback,useEffect,useMemo,useRef,useState } from "react";
 
+import { spokenStep,stepLabel } from "@/lib/stepLabels";
+import { AutoSpeedSettings,AutoToggle } from "./build/AutoControls";
+import { PRESET_LABEL,readAutoMode,readAutoSpeed,setAutoModeStored,setAutoSpeedStored,useAutoMode,useAutoSpeed } from "./build/autoPreferences";
+import { breathe,crop,stepThumbs,withGrid } from "./build/images";
+import { makeSource,pageReader,type PageSource } from "./build/pageReader";
+import type { Advance,Check,Phase } from "./build/types";
+import { useIsPhone } from "./build/useIsPhone";
 
-type Phase = { kind: "loading"; label: string } | { kind: "ready" } | { kind: "error"; message: string } | { kind: "done" };
-type Check = { state: "checking"; auto?: boolean } | { state: "result"; result: CheckResult; frame: string; id: number; sample: Uint8ClampedArray | null } | { state: "error"; message: string };
-// A pending move to the next step after a pass. `id` is the check it came from: it lives only while that result is on
-// screen for this step, so a step change, a new check or dismissing the result drops it. `started` once the countdown runs.
-type Advance = { id: number; delay: number; waitForVoice: boolean; started: boolean };
-
-// Auto Mode on/off, remembered per device. Off by default, so the manual Check flow is unchanged until it's turned on.
-const AUTO_KEY = "buildsight:autoMode";
-const autoListeners = new Set<() => void>();
-function readAutoMode() {
-  try {
-    return localStorage.getItem(AUTO_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
-function setAutoModeStored(on: boolean) {
-  try {
-    localStorage.setItem(AUTO_KEY, on ? "1" : "0");
-  } catch {}
-  autoListeners.forEach((fn) => fn());
-}
-function useAutoMode() {
-  return useSyncExternalStore(
-    (onChange) => {
-      autoListeners.add(onChange);
-      return () => void autoListeners.delete(onChange);
-    },
-    readAutoMode,
-    () => false,
-  );
-}
-
-// The Auto Mode switch. Lit when on; the manual Check button sits beside it and always works.
-function AutoToggle({ on, small }: { on: boolean; small?: boolean }) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={on}
-      aria-label="Auto Mode: check each step automatically"
-      title="Auto Mode (A): check each step when you finish it, and move on when it passes"
-      onClick={() => setAutoModeStored(!on)}
-      className={`flex shrink-0 items-center gap-2 rounded-xl border text-xs font-semibold transition active:scale-95 ${small ? "px-2.5 py-2.5" : "px-3"} ${
-        on ? "border-emerald-300/50 bg-emerald-300/15 text-emerald-200" : "border-white/15 bg-white/[0.06] text-white/60 hover:text-white/85"
-      }`}
-    >
-      <span className={`relative h-3.5 w-6 rounded-full transition ${on ? "bg-emerald-300/80" : "bg-white/20"}`}>
-        <span className={`absolute top-0.5 h-2.5 w-2.5 rounded-full bg-white transition-all ${on ? "left-3" : "left-0.5"}`} />
-      </span>
-      Auto
-    </button>
-  );
-}
-
-// Auto Mode speed, remembered per device: 0 = Careful … 0.5 = Normal (default) … 1 = Fast. See timingFor in autoCheck.ts.
-const SPEED_KEY = "buildsight:autoSpeed";
-const speedListeners = new Set<() => void>();
-function readAutoSpeed() {
-  try {
-    const v = Number(localStorage.getItem(SPEED_KEY));
-    return localStorage.getItem(SPEED_KEY) != null && Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : DEFAULT_SPEED;
-  } catch {
-    return DEFAULT_SPEED;
-  }
-}
-function setAutoSpeedStored(v: number) {
-  try {
-    localStorage.setItem(SPEED_KEY, String(Math.min(1, Math.max(0, v))));
-  } catch {}
-  speedListeners.forEach((fn) => fn());
-}
-function useAutoSpeed() {
-  return useSyncExternalStore(
-    (onChange) => {
-      speedListeners.add(onChange);
-      return () => void speedListeners.delete(onChange);
-    },
-    readAutoSpeed,
-    () => DEFAULT_SPEED,
-  );
-}
-const PRESET_LABEL: Record<AutoPreset, string> = { careful: "Careful", normal: "Normal", fast: "Fast" };
-
-// Gear next to the Auto switch: a small popover to pick how quickly Auto Mode checks and moves on.
-function AutoSpeedSettings({ speed, small }: { speed: number; small?: boolean }) {
-  const [open, setOpen] = useState(false);
-  const box = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const away = (e: PointerEvent) => !box.current?.contains(e.target as Node) && setOpen(false);
-    const esc = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
-    document.addEventListener("pointerdown", away);
-    document.addEventListener("keydown", esc);
-    return () => {
-      document.removeEventListener("pointerdown", away);
-      document.removeEventListener("keydown", esc);
-    };
-  }, [open]);
-  const t = timingFor(speed);
-  const preset = presetAt(speed);
-  return (
-    <div ref={box} className={`relative shrink-0 ${open ? "z-50" : ""}`} onPointerDown={(e) => e.stopPropagation()}>
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        aria-label={`Auto speed: ${preset ? PRESET_LABEL[preset] : "custom"}`}
-        aria-expanded={open}
-        title="Auto speed"
-        className={`grid h-full place-items-center rounded-xl border border-white/15 bg-white/[0.06] text-white/60 transition hover:text-white/90 active:scale-95 ${small ? "w-10 py-2.5" : "w-10 py-2.5"} ${open ? "border-sky-300/50 text-sky-200" : ""}`}
-      >
-        <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-          <circle cx="12" cy="12" r="3" />
-          <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" />
-        </svg>
-      </button>
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            initial={{ opacity: 0, y: 6, scale: 0.97 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 6, scale: 0.97 }}
-            transition={{ duration: 0.15 }}
-            role="dialog"
-            aria-label="Auto speed"
-            className="absolute bottom-full right-0 z-50 mb-2 w-64 max-w-[calc(100vw-2rem)] rounded-2xl border border-sky-300/25 bg-[#070c16] p-3 text-left shadow-[0_12px_40px_-8px_rgba(0,0,0,0.9)]"
-          >
-            <div className="flex items-baseline justify-between">
-              <p className="text-xs font-semibold text-white/90">Auto speed</p>
-              <p className="text-[11px] text-sky-300">{preset ? PRESET_LABEL[preset] : "Custom"}</p>
-            </div>
-            <div className="mt-2 grid grid-cols-3 gap-1 rounded-xl bg-white/[0.05] p-1">
-              {(["careful", "normal", "fast"] as AutoPreset[]).map((p) => (
-                <button
-                  key={p}
-                  type="button"
-                  onClick={() => setAutoSpeedStored(SPEED_OF[p])}
-                  aria-pressed={preset === p}
-                  className={`rounded-lg py-1.5 text-xs font-semibold transition ${preset === p ? "bg-sky-300 text-ink" : "text-white/65 hover:text-white"}`}
-                >
-                  {PRESET_LABEL[p]}
-                </button>
-              ))}
-            </div>
-            <input
-              type="range"
-              min={0}
-              max={1}
-              step={0.05}
-              value={speed}
-              onChange={(e) => setAutoSpeedStored(Number(e.target.value))}
-              aria-label="Auto speed, from careful to fast"
-              className="mt-3 w-full accent-sky-300"
-            />
-            <div className="flex justify-between text-[10px] text-white/40">
-              <span>Careful</span>
-              <span>Fast</span>
-            </div>
-            <p className="mt-2 text-[11px] leading-snug text-white/75">{describeTiming(t)}</p>
-            <p className="mt-0.5 text-[11px] leading-snug text-white/45">
-              Moves on {Number((t.advanceMs / 1000).toFixed(1))} s after a pass · waits longer after misses
-            </p>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-}
-
-// Every step picture on one page, cut out and scaled to THUMB_H px tall, decoding the page only once.
-// Shared by the step strip and "where am I?" (see thumbsFor), so each picture is cut once per session.
-const THUMB_H = 160;
-async function stepThumbs(pageImage: string, boxes: ExtractedStep["box"][], pad = 0.02): Promise<string[]> {
-  const img = new Image();
-  img.src = pageImage;
-  await img.decode();
-  const out: string[] = [];
-  for (const box of boxes) {
-    const x = Math.max(0, box.x - pad) * img.width;
-    const y = Math.max(0, box.y - pad) * img.height;
-    const w = Math.min(Math.min(1, box.w + 2 * pad) * img.width, img.width - x);
-    const h = Math.min(Math.min(1, box.h + 2 * pad) * img.height, img.height - y);
-    const scale = Math.min(1, THUMB_H / h);
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.max(1, Math.round(w * scale));
-    canvas.height = Math.max(1, Math.round(h * scale));
-    canvas.getContext("2d")?.drawImage(img, x, y, w, h, 0, 0, canvas.width, canvas.height);
-    out.push(await encodeCanvas(canvas, "image/jpeg", 0.8));
-  }
-  return out;
-}
-
-// Lets the phone draw a frame between chunks of picture work, so the screen never freezes.
-const breathe = () => new Promise((r) => setTimeout(r, 0));
-
-// Cuts a step's picture out of the rendered page (box is 0–1 of the page), with a little padding.
-async function crop(pageImage: string, box: ExtractedStep["box"], pad = 0.02): Promise<string> {
-  const img = new Image();
-  img.src = pageImage;
-  await img.decode();
-  const x = Math.max(0, box.x - pad) * img.width;
-  const y = Math.max(0, box.y - pad) * img.height;
-  const w = Math.min(1, box.w + 2 * pad) * img.width;
-  const h = Math.min(1, box.h + 2 * pad) * img.height;
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.min(w, img.width - x);
-  canvas.height = Math.min(h, img.height - y);
-  canvas.getContext("2d")?.drawImage(img, x, y, canvas.width, canvas.height, 0, 0, canvas.width, canvas.height);
-  return encodeCanvas(canvas, "image/jpeg", 0.75);
-}
-
-// Draws a light percentage grid on an image. Claude places boxes far more accurately with it.
-async function withGrid(src: string): Promise<string> {
-  const img = new Image();
-  img.src = src;
-  await img.decode();
-  const scale = Math.max(1, 700 / img.width); // small crops get upscaled so labels stay legible
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.round(img.width * scale);
-  canvas.height = Math.round(img.height * scale);
-  const g = canvas.getContext("2d")!;
-  g.drawImage(img, 0, 0, canvas.width, canvas.height);
-  g.strokeStyle = "rgba(255,0,150,0.55)";
-  g.fillStyle = "rgba(255,0,150,0.9)";
-  g.lineWidth = 1;
-  g.font = "11px sans-serif";
-  for (let i = 1; i < 10; i++) {
-    const x = (canvas.width * i) / 10;
-    const y = (canvas.height * i) / 10;
-    g.beginPath();
-    g.moveTo(x, 0);
-    g.lineTo(x, canvas.height);
-    g.moveTo(0, y);
-    g.lineTo(canvas.width, y);
-    g.stroke();
-    g.fillText(String(i * 10), x + 2, 11);
-    g.fillText(String(i * 10), 2, y - 2);
-  }
-  return encodeCanvas(canvas, "image/jpeg", 0.75);
-}
-
-// "Step 8" or, for a panel inside a step, "Step 8 · 2 of 4".
-// A "continued" step (a page with no printed number) shows the step it continues, when known.
-function stepLabel(s: ExtractedStep) {
-  if (s.continued) return s.number ? `Step ${s.number} · continued` : "Continued";
-  return `Step ${s.number}${s.sub ? ` · ${s.sub.replace("/", " of ")}` : ""}`;
-}
-function spokenStep(s: ExtractedStep) {
-  if (s.continued) return `${s.number ? `Step ${s.number}, continued` : "Continuing"}. ${s.instruction}`;
-  return `Step ${s.number}${s.sub ? `, part ${s.sub.replace("/", " of ")}` : ""}. ${s.instruction}`;
-}
-
-// True on phone-width screens (Tailwind's `sm` breakpoint is 640px).
-const PHONE_QUERY = "(max-width: 639px)";
-function useIsPhone() {
-  return useSyncExternalStore(
-    (onChange) => {
-      const mq = window.matchMedia(PHONE_QUERY);
-      mq.addEventListener("change", onChange);
-      return () => mq.removeEventListener("change", onChange);
-    },
-    () => window.matchMedia(PHONE_QUERY).matches,
-    () => false,
-  );
-}
-
-// A piece this big on the manual page (geometric mean of width and height, as a share of the page) fills the hologram.
 const HOLO_FULL_SIZE = 0.09;
-
-// How many pages ahead to read in the background, and how many Claude calls may run at once.
 const LOOKAHEAD = 6;
-const MAX_PARALLEL = 3; // uploads share the phone's connection; fewer at once keeps the current page fast
-// "Go to step n" searches this many pages each way in a manual that isn't pre-read (each unread page is a Claude call).
 const SEARCH_PAGES = 15;
-
-// Runs at most `n` tasks at a time; extra ones wait in line.
-function limiter(n: number) {
-  let running = 0;
-  const queue: (() => void)[] = [];
-  return async <T,>(task: () => Promise<T>): Promise<T> => {
-    if (running >= n) await new Promise<void>((r) => queue.push(r));
-    running++;
-    try {
-      return await task();
-    } finally {
-      running--;
-      queue.shift()?.();
-    }
-  };
-}
-
-// Where page images come from: pre-read images when we have them, otherwise the PDF (opened only if needed).
-type PageSource = { numPages: number; prebuilt: Prebuilt | null; render: (page: number) => Promise<string> };
-
-function makeSource(m: Manual, prebuilt: Prebuilt | null, numPages: number, doc?: PDFDocumentProxy): PageSource {
-  let pdf: Promise<PDFDocumentProxy> | null = doc ? Promise.resolve(doc) : null;
-  return {
-    numPages,
-    prebuilt,
-    render: (page) =>
-      prebuilt?.pages[String(page)]?.length
-        ? Promise.resolve(`/steps/${prebuilt.id}/${page}.jpg`)
-        : (pdf ??= openManualPdf(m)).then((d) => renderPage(d, page, 1000, 0.7)),
-  };
-}
-
-type PageJob = { image: () => Promise<string>; steps: Promise<ExtractedStep[]> };
-
-// Renders and reads pages, each at most once: shared by the current page and the read-ahead.
-function pageReader(manualId: string, source: PageSource) {
-  const jobs = new Map<number, PageJob>();
-  const read = new Map<number, ExtractedStep[]>(); // pages whose steps are known, for "where am I?"
-  const limit = limiter(MAX_PARALLEL);
-  const readPage = (page: number): PageJob => {
-    const existing = jobs.get(page);
-    if (existing) return existing;
-    let rendered: Promise<string> | null = null;
-    const image = () => (rendered ??= source.render(page));
-    const steps = (async () => {
-      const cached = await getPageSteps<ExtractedStep>(manualId, page);
-      if (cached) return cached;
-      const pre = source.prebuilt?.pages[String(page)];
-      if (pre) {
-        await savePageSteps(manualId, page, pre);
-        return pre;
-      }
-      const pageImage = await image();
-      const data = await limit(async () => {
-        const res = await fetch("/api/extract", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ page: await withGrid(pageImage) }) });
-        const body = await res.json();
-        if (!res.ok) throw new Error(body.error ?? "Couldn't read that page.");
-        return body;
-      });
-      await savePageSteps(manualId, page, data.steps);
-      return data.steps as ExtractedStep[];
-    })();
-    // Continuation pages: a page with no printed step number, or one whose number is lower than the
-    // previous page's (step numbers only go up, so a lower one is a panel number from a sub-build),
-    // continues the previous page's last step and takes its number.
-    const numbered = steps.then(async (found) => {
-      if (page < 2 || found.length === 0) return found;
-      const before = await (jobs.get(page - 1)?.steps ?? getPageSteps<ExtractedStep>(manualId, page - 1)).catch(() => null);
-      const last = before?.filter((s) => s.number).at(-1)?.number;
-      if (!last) return found;
-      return found.map((s) =>
-        (s.continued && !s.number) || (s.number && s.number < last && !s.continued)
-          ? { ...s, number: last, continued: true, sub: undefined }
-          : s,
-      );
-    });
-    const job = { image, steps: numbered };
-    // A failed page can be retried.
-    numbered.catch(() => jobs.delete(page));
-    numbered.then((found) => read.set(page, found)).catch(() => {});
-    jobs.set(page, job);
-    return job;
-  };
-  // Pages read so far that have steps, in order, with their image (for "where am I?").
-  const pages = () =>
-    [...read.entries()]
-      .filter(([, found]) => found.length)
-      .sort(([a], [b]) => a - b)
-      .map(([p, found]) => ({ page: p, steps: found, image: readPage(p).image }));
-  return Object.assign(readPage, { pages, count: () => read.size });
-}
 
 export default function BuildView() {
   const { id } = useParams<{ id: string }>();
