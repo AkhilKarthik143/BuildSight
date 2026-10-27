@@ -46,9 +46,9 @@ Four workstreams: (1) CI + docs, (2) API hardening (unauthenticated, spend-beari
 - [x] Add `X-Content-Type-Options` and `Referrer-Policy` headers in `next.config.ts` without breaking camera/mic (`Permissions-Policy` must still allow camera and microphone for self)
 
 **Phase 3: Split `BuildView.tsx` (behavior-preserving)**
-- [ ] Extract in small commits, running tests after each: camera/motion-stillness logic, check-build flow + result state, auto-mode controller, voice/command wiring, step navigation + persistence, overlays/panels as components under `src/components/build/`
-- [ ] Target: `BuildView.tsx` under ~600 lines, no logic changes, no changed props on existing components, no new `any`
-- [ ] Pure logic that moves into `src/lib` gets a test in the matching `scripts/test-*.mjs`
+- [x] Extract in small commits, running tests after each: camera/motion-stillness logic, check-build flow + result state, auto-mode controller, voice/command wiring, step navigation + persistence, overlays/panels as components under `src/components/build/`
+- [x] Target: `BuildView.tsx` under ~600 lines, no logic changes, no changed props on existing components, no new `any`
+- [x] Pure logic that moves into `src/lib` gets a test in the matching `scripts/test-*.mjs`
 
 **Phase 4: Tests + offline eval**
 - [x] `scripts/test-api-guard.mjs`: rate limiter (burst, refill, per-IP isolation, eviction), body-size and JSON-error handling, host allowlist; add to `npm test`
@@ -127,3 +127,4 @@ Untested lib modules: claude, manuals, catalog, json, whereAmI, prebuilt, pdf, c
 ### Phase 3 — extraction checkpoints
 - Extracted auto preference stores/settings, image utilities, page reader, shared state types, viewport hook, labels and bounded queue without changing algorithms. Original suites, new helper tests, lint and typecheck pass.
 - Extracted shared build state, navigation/persistence, part guidance, step checks/countdowns, recognition, camera stillness/Auto Mode, and voice/shortcuts. All original test scripts remain unmodified. Hook dependency lists now explicitly include stable setter/ref inputs crossing module boundaries; ref aliases end in Ref for React compiler analysis. Removed the existing per-frame tuning console.log. Lint/typecheck/tests pass.
+- Extracted header, manual/photo overlays, step card and check-result panel with unchanged markup and existing component contracts. BuildView is now 45 lines; navigation and the step card are the largest modules (~323/347 lines). Lint/typecheck/all tests/build pass after extraction.
