@@ -1,8 +1,8 @@
 "use client";
-import { describeTiming,presetAt,SPEED_OF,timingFor,type AutoPreset } from "@/lib/autoCheck";
-import { AnimatePresence,motion } from "motion/react";
-import { useEffect,useRef,useState } from "react";
-import { PRESET_LABEL,setAutoModeStored,setAutoSpeedStored } from "./autoPreferences";
+import { describeTiming, presetAt, SPEED_OF, timingFor, type AutoPreset } from "@/lib/autoCheck";
+import { AnimatePresence, motion } from "motion/react";
+import { useEffect, useRef, useState } from "react";
+import { PRESET_LABEL, setAutoModeStored, setAutoSpeedStored } from "./autoPreferences";
 // The Auto Mode switch. Lit when on; the manual Check button sits beside it and always works.
 export function AutoToggle({ on, small }: { on: boolean; small?: boolean }) {
   return (
@@ -13,9 +13,8 @@ export function AutoToggle({ on, small }: { on: boolean; small?: boolean }) {
       aria-label="Auto Mode: check each step automatically"
       title="Auto Mode (A): check each step when you finish it, and move on when it passes"
       onClick={() => setAutoModeStored(!on)}
-      className={`flex shrink-0 items-center gap-2 rounded-xl border text-xs font-semibold transition active:scale-95 ${small ? "px-2.5 py-2.5" : "px-3"} ${
-        on ? "border-emerald-300/50 bg-emerald-300/15 text-emerald-200" : "border-white/15 bg-white/[0.06] text-white/60 hover:text-white/85"
-      }`}
+      className={`flex shrink-0 items-center gap-2 rounded-xl border text-xs font-semibold transition active:scale-95 ${small ? "px-2.5 py-2.5" : "px-3"} ${on ? "border-emerald-300/50 bg-emerald-300/15 text-emerald-200" : "border-white/15 bg-white/[0.06] text-white/60 hover:text-white/85"
+        }`}
     >
       <span className={`relative h-3.5 w-6 rounded-full transition ${on ? "bg-emerald-300/80" : "bg-white/20"}`}>
         <span className={`absolute top-0.5 h-2.5 w-2.5 rounded-full bg-white transition-all ${on ? "left-3" : "left-0.5"}`} />
@@ -29,7 +28,7 @@ export function AutoSpeedSettings({ speed, small }: { speed: number; small?: boo
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (!open) return;
+    if(!open) return;
     const away = (e: PointerEvent) => !box.current?.contains(e.target as Node) && setOpen(false);
     const esc = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
     document.addEventListener("pointerdown", away);

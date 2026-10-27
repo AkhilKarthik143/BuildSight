@@ -1,862 +1,24 @@
 /* eslint-disable @next/next/no-img-element -- step pictures are data URLs rendered in the browser */
 "use client";
 
-import type { CheckResult } from "@/app/api/check/route";
-import type { ExtractedStep } from "@/app/api/extract/route";
-import type { LocateResult } from "@/app/api/locate/route";
-import CameraFeed,{ type CameraHandle } from "@/components/CameraFeed";
-import CheckErrorOverlay,{ IssueBoxes,LiveIssueBoxes,WarnGlyph } from "@/components/CheckErrorOverlay";
-import type { PartMark } from "@/components/HighlightBox";
+import CameraFeed from "@/components/CameraFeed";
+import CheckErrorOverlay, { IssueBoxes, LiveIssueBoxes, WarnGlyph } from "@/components/CheckErrorOverlay";
 import ManualPanel from "@/components/ManualPanel";
 import PieceHologram from "@/components/PieceHologram";
 import VoicePanel from "@/components/VoicePanel";
 import ZoomViewer from "@/components/ZoomViewer";
-import type { AssistAction } from "@/lib/assistReply";
-import {
-AUTO_CHANGE_THRESHOLD,
-AUTO_MAX_MISSES,
-AUTO_SPEAK_FIX_CONFIDENCE,
-describeTiming,
-MANUAL_ADVANCE_MS,
-markChecked,
-newWatch,
-presetAt,
-recordMiss,
-resetForStep,
-SPEED_OF,
-stepSpeed,
-tick,
-timingFor,
-type AutoTiming
-} from "@/lib/autoCheck";
-import { matchCommand } from "@/lib/commands";
-import { cutOutPiece,type Cutout } from "@/lib/cutout";
-import { CATEGORY_TAG,checkVerdict,forStep,isPass,issueCategory,issueLabel,photoLabel,spokenIssues } from "@/lib/issueBox";
-import { getManual,saveManual,type Manual } from "@/lib/manuals";
-import { describePart,partLines } from "@/lib/parts";
-import { openManualPdf } from "@/lib/pdf";
-import { loadPrebuilt } from "@/lib/prebuilt";
-import { speak,speaker,stopSpeaking } from "@/lib/speech";
-import { AUTO_MIN_CONFIDENCE,changed,decide,MAX_TILES,whereAmI,type Tile } from "@/lib/whereAmI";
-import { AnimatePresence,motion } from "motion/react";
+import { CATEGORY_TAG, issueCategory, issueLabel, photoLabel } from "@/lib/issueBox";
+import { describePart } from "@/lib/parts";
+import { stopSpeaking } from "@/lib/speech";
+import { AnimatePresence, motion } from "motion/react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { useCallback,useEffect,useMemo,useRef,useState } from "react";
 
-import { spokenStep,stepLabel } from "@/lib/stepLabels";
-import { AutoSpeedSettings,AutoToggle } from "./build/AutoControls";
-import { PRESET_LABEL,readAutoMode,readAutoSpeed,setAutoModeStored,setAutoSpeedStored,useAutoMode,useAutoSpeed } from "./build/autoPreferences";
-import { breathe,crop,stepThumbs,withGrid } from "./build/images";
-import { makeSource,pageReader,type PageSource } from "./build/pageReader";
-import type { Advance,Check,Phase } from "./build/types";
-import { useIsPhone } from "./build/useIsPhone";
-
-const HOLO_FULL_SIZE = 0.09;
-const LOOKAHEAD = 6;
-const SEARCH_PAGES = 15;
-
+import { stepLabel } from "@/lib/stepLabels";
+import { AutoSpeedSettings, AutoToggle } from "./build/AutoControls";
+import { useBuildModel } from "./build/useBuildModel";
 export default function BuildView() {
-  const { id } = useParams<{ id: string }>();
-  const camera = useRef<CameraHandle>(null);
-  // What the live mistake boxes need from the camera (read when called, not during render).
-  const liveCamera = useMemo(() => ({ size: () => camera.current?.size() ?? null, sample: () => camera.current?.sample() ?? null }), []);
-  const direction = useRef<1 | -1>(1);
-  const landOn = useRef<number | null>(null); // step number the next page load opens at ("go to step 8")
-  const landIdx = useRef<number | null>(null); // exact step index the next page load opens at (step strip)
-  const search = useRef(0); // bumped to cancel a running "go to step" search
-
-  const [manual, setManual] = useState<Manual | null>(null);
-  const [doc, setDoc] = useState<PageSource | null>(null);
-  const [page, setPage] = useState(0);
-  const [pageImage, setPageImage] = useState<string | null>(null);
-  const [steps, setSteps] = useState<ExtractedStep[]>([]);
-  const [stepIdx, setStepIdx] = useState(0);
-  const [phase, setPhase] = useState<Phase>({ kind: "loading", label: "Opening manual" });
-  const [target, setTarget] = useState<string | null>(null);
-  const [targetKey, setTargetKey] = useState<string | null>(null); // which step `target` was cut for
-  const [previous, setPrevious] = useState<string | null>(null);
-  // A check belongs to the step it ran on (its key); on any other step it isn't shown.
-  const [checkState, setCheckState] = useState<(Check & { key: string }) | null>(null);
-  const [issuePick, setIssuePick] = useState<number | null>(null); // problem tapped in the list: its box is brightened
-  const [showBoxes, setShowBoxes] = useState(true);
-  // The checked photo is open full screen while this holds that check's id; a new check (new id), a step change
-  // (the check hides) or Close all end it without extra bookkeeping.
-  const [photoFor, setPhotoFor] = useState<number | null>(null);
-  const checkSeq = useRef(0); // bumped by every new check and step change; older answers are dropped
-  // the move to the next step after a pass: shown as a countdown bar with Cancel (see the effect after runCheck)
-  const [advance, setAdvance] = useState<Advance | null>(null);
-  const voiceDone = useRef<Promise<unknown>>(Promise.resolve()); // resolves when the last check result finishes speaking
-  const [muted, setMuted] = useState(false);
-  const [showManual, setShowManual] = useState(false); // true = blue "hologram" tint; default is the real colors
-  const [zoomOpen, setZoomOpen] = useState(false); // full-screen zoom viewer for the manual picture
-  // Phones get a swipeable step card: swipe down to see your build, up for full details.
-  const isPhone = useIsPhone();
-  const [sheetOpen, setSheetOpen] = useState(true);
-  const compact = isPhone && !sheetOpen;
-
-  const stepKey = `${page}-${stepIdx}`;
-  // "I'm stuck": smaller sub-steps from the voice assistant, shown as a checklist for this step only.
-  const [substeps, setSubsteps] = useState<{ key: string; items: string[]; done: boolean[] } | null>(null);
-  const activeSubs = substeps?.key === stepKey ? substeps : null;
-  const check = forStep(checkState, stepKey);
-  const setCheck = useCallback((c: Check | null) => setCheckState(c && { ...c, key: stepKey }), [stepKey]);
-  const verdict = check?.state === "result" ? checkVerdict(check.result) : null;
-  const photoOpen = check?.state === "result" && verdict === "fix" && photoFor === check.id;
-  // Where each part sits in the manual picture, found once per part (see locatePart).
-  const located = useRef(new Map<string, Promise<LocateResult | null>>());
-  const [attempt, setAttempt] = useState(0); // bumped by Retry to re-read the page
-  const [preview, setPreview] = useState<string | null>(null); // page image shown while Claude reads it
-  // Finding the step from the camera, always automatic (no button): see findMyPlace and the auto-detect loop below.
-  const [readCount, setReadCount] = useState(0); // pages read so far, in view or in the background
-  const [locating, setLocating] = useState(false);
-  const [notice, setNotice] = useState<{ text: string; problems?: string[] } | null>(null);
-  const lastAuto = useRef(0); // when the last automatic check ran
-  const lastManual = useRef(0); // when the builder last changed step themselves
-  const autoJump = useRef(false); // the next step change is ours, not the builder's
-  const firstAutoDone = useRef(false);
-  const baseline = useRef<Uint8ClampedArray | null>(null); // camera sample at the last automatic check
-  // Auto Mode: checks the build on its own ("changed, then still") and moves on when it passes. See src/lib/autoCheck.ts.
-  const autoMode = useAutoMode();
-  const autoSpeed = useAutoSpeed();
-  const timing = useMemo(() => timingFor(autoSpeed), [autoSpeed]);
-  const timingRef = useRef<AutoTiming>(timing); // read by runCheck's move-on countdown without re-creating it
-  useEffect(() => {
-    timingRef.current = timing;
-  }, [timing]);
-  const watch = useRef(newWatch(0));
-  const [autoStatus, setAutoStatus] = useState<string | null>(null); // what Auto Mode is doing, in the step card
-  const currentKey = useRef(stepKey);
-
-  // Every page change shows the loading card first.
-  const turnTo = useCallback((p: number) => {
-    setPhase({ kind: "loading", label: `Reading page ${p}` });
-    setCheckState(null);
-    setPage(p);
-  }, []);
-
-  const step = steps[stepIdx] as ExtractedStep | undefined;
-  const part = step?.parts[0];
-
-  // Finds part i of this step in the manual picture (once per part; shared by tap-to-find and the hologram).
-  function locatePart(i: number): Promise<LocateResult | null> | null {
-    if (!step || !target || targetKey !== stepKey || !step.parts[i]) return null;
-    const key = `${stepKey}-${i}`;
-    let job = located.current.get(key);
-    if (!job) {
-      job = withGrid(target)
-        .then((image) =>
-          fetch("/api/locate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ image, part: describePart(step.parts[i]), parts: partLines(step.parts) }) }),
-        )
-        .then((r) => (r.ok ? (r.json() as Promise<LocateResult>) : null))
-        .catch(() => null);
-      located.current.set(key, job);
-    }
-    return job;
-  }
-
-  // 1. load the manual and its PDF
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const m = await getManual(id);
-      if (!m) return setPhase({ kind: "error", message: "That manual isn't in your library on this device." });
-      setManual(m);
-      try {
-        // A pre-read manual needs no PDF and no Claude calls; otherwise open the PDF.
-        const prebuilt = await loadPrebuilt(m);
-        const pdf = prebuilt ? undefined : await openManualPdf(m);
-        const numPages = prebuilt?.pageCount ?? pdf!.numPages;
-        if (cancelled) return;
-        const updated = { ...m, pageCount: numPages, openedAt: Date.now() };
-        await saveManual(updated);
-        setManual(updated);
-        setDoc(makeSource(m, prebuilt, numPages, pdf));
-        turnTo(Math.min(m.page, numPages));
-      } catch (e) {
-        setPhase({ kind: "error", message: e instanceof Error ? e.message : "Couldn't open the PDF." });
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [id, turnTo]);
-
-  const reader = useMemo(() => (doc && manual ? pageReader(manual.id, doc) : null), [doc, manual?.id]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // 2. read the current page (and the next few in the background); skip pages with no steps
-  useEffect(() => {
-    if (!reader || !doc || !manual || page < 1) return;
-    let cancelled = false;
-    const job = reader(page); // queue the current page before the read-ahead
-    for (let k = 1; k <= LOOKAHEAD && page + k <= doc.numPages; k++) reader(page + k);
-    const knownEmpty = doc.prebuilt?.pages[String(page)]?.length === 0;
-    if (!knownEmpty) job.image().then((img) => !cancelled && setPreview(img)).catch(() => {});
-    job.steps
-      .then(async (found) => [found.length ? await job.image() : "", found] as const)
-      .then(([image, found]) => {
-        if (cancelled) return;
-        if (found.length === 0) {
-          const next = page + direction.current;
-          if (next >= 1 && next <= doc.numPages) return turnTo(next);
-          if (next > doc.numPages) return setPhase({ kind: "done" });
-          direction.current = 1;
-          return turnTo(page + 1);
-        }
-        setPageImage(image);
-        setSteps(found);
-        const land =
-          landIdx.current != null ? Math.min(landIdx.current, found.length - 1) : landOn.current == null ? -1 : found.findIndex((s) => s.number === landOn.current);
-        landOn.current = null;
-        landIdx.current = null;
-        setStepIdx(land >= 0 ? land : direction.current === 1 ? 0 : found.length - 1);
-        setPhase({ kind: "ready" });
-        saveManual({ ...manual, page, openedAt: Date.now() });
-      })
-      .catch((e) => !cancelled && setPhase({ kind: "error", message: e instanceof Error ? e.message : "Couldn't read that page." }));
-    return () => {
-      cancelled = true;
-    };
-    // manual is saved as a side effect; re-running on its change would loop
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reader, page, attempt]);
-
-  // 3. cut out this step's target picture (and the one before it) for display and checking
-  useEffect(() => {
-    if (!pageImage || !step) return;
-    let cancelled = false;
-    const key = `${page}-${stepIdx}`;
-    crop(pageImage, step.box).then((t) => {
-      if (cancelled) return;
-      setTarget(t);
-      setTargetKey(key);
-    });
-    const prev = steps[stepIdx - 1];
-    (prev ? crop(pageImage, prev.box) : Promise.resolve(null)).then((p) => !cancelled && setPrevious(p));
-    return () => {
-      cancelled = true;
-    };
-  }, [pageImage, step, steps, stepIdx]); // eslint-disable-line react-hooks/exhaustive-deps -- page changes come with a new pageImage
-
-  // 4. every part of this step, found in the manual's parts box at once (one /api/locate call per part, in
-  // parallel, cached), so all parts are boxed on the manual picture and shown as holograms without tapping.
-  const MAX_PARTS = 6;
-  const [locs, setLocs] = useState<{ key: string; results: (LocateResult | null)[] } | null>(null);
-  useEffect(() => {
-    if (phase.kind !== "ready" || !step || !target || targetKey !== stepKey) return;
-    let cancelled = false;
-    const jobs = step.parts.slice(0, MAX_PARTS).map((_, i) => locatePart(i) ?? Promise.resolve(null));
-    Promise.all(jobs).then((results) => !cancelled && setLocs({ key: stepKey, results }));
-    return () => {
-      cancelled = true;
-    };
-    // locatePart reads the same step/target values listed here
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase.kind, step, target, targetKey, stepKey]);
-  const stepLocs = locs?.key === stepKey ? locs.results : null;
-  const marks: PartMark[] | undefined = stepLocs?.map((r, i) => ({
-    callout: r?.callout ?? null,
-    placed: r?.placed ?? null,
-    label: i + 1,
-    dim: false,
-  }));
-
-  // Holograms of every part: the real piece cut out of the manual's parts box, at the manual's scale.
-  const holos = useRef(new Map<string, Promise<{ cut: Cutout | null; size: number }>>());
-  const [holoList, setHoloList] = useState<{ key: string; items: { cut: Cutout | null; size: number }[] } | null>(null);
-  useEffect(() => {
-    if (phase.kind !== "ready" || !step || !target || targetKey !== stepKey || !pageImage) return;
-    let cancelled = false;
-    // Cut from the 2400 px page when the manual has one (sharper), else from the page image on screen.
-    const hires = doc?.prebuilt?.pages[String(page)]?.length ? `/steps/${doc.prebuilt.id}/hi/${page}.jpg` : null;
-    const source = hires ?? pageImage;
-    const box = step.box;
-    const holoFor = (i: number): Promise<{ cut: Cutout | null; size: number }> => {
-      const key = `${stepKey}-${i}`;
-      const cached = holos.current.get(key);
-      if (cached) return cached;
-      const found = locatePart(i);
-      if (!found) return Promise.resolve({ cut: null, size: 0 });
-      const job = found
-        .then(async (result) => {
-          const c = result?.callout;
-          if (!c) return { cut: null, size: 0 };
-          // The callout box is relative to the step picture; map it onto the whole page (same padding as crop()).
-          const tx = Math.max(0, box.x - 0.02);
-          const ty = Math.max(0, box.y - 0.02);
-          const tw = Math.min(box.w + 0.04, 1 - tx);
-          const th = Math.min(box.h + 0.04, 1 - ty);
-          const onPage = { x: tx + c.x * tw, y: ty + c.y * th, w: c.w * tw, h: c.h * th };
-          const pad = 0.008;
-          const cut = await cutOutPiece(await crop(source, onPage, pad).catch(() => crop(pageImage, onPage, pad)));
-          if (!cut) return { cut: null, size: 0 };
-          // Size on the manual page, so pieces keep their proportions to each other from step to step.
-          const cropW = Math.min(onPage.w + 2 * pad, 1 - Math.max(0, onPage.x - pad));
-          const cropH = Math.min(onPage.h + 2 * pad, 1 - Math.max(0, onPage.y - pad));
-          const size = Math.max(0.42, Math.min(1, Math.sqrt(cut.width * cropW * cut.height * cropH) / HOLO_FULL_SIZE));
-          return { cut, size };
-        })
-        .catch(() => ({ cut: null, size: 0 }));
-      holos.current.set(key, job);
-      return job;
-    };
-    Promise.all(step.parts.slice(0, MAX_PARTS).map((_, i) => holoFor(i))).then((items) => !cancelled && setHoloList({ key: stepKey, items }));
-    return () => {
-      cancelled = true;
-    };
-    // locatePart reads the same step/target values listed here
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase.kind, step, target, targetKey, stepKey, pageImage, doc, page]);
-  const holoItems = holoList?.key === stepKey ? holoList.items : null;
-  const holoState: "scanning" | "ready" | "none" = !holoItems ? "scanning" : holoItems.some((h) => h.cut) ? "ready" : "none";
-
-  // 4. read each new step aloud
-  useEffect(() => {
-    if (phase.kind === "ready" && step && !muted) speak(spokenStep(step));
-  }, [phase.kind, step, muted]);
-  useEffect(() => stopSpeaking, []);
-
-  // Back to step 1: page 1 forward, skipping cover/intro pages as usual.
-  const restart = useCallback(
-    (ask = true) => {
-      if (!doc || (ask && !window.confirm("Start over from step 1?"))) return;
-      search.current++;
-      stopSpeaking();
-      direction.current = 1;
-      setSheetOpen(true);
-      turnTo(1);
-      setAttempt((n) => n + 1); // re-read even if we're already on page 1
-    },
-    [doc, turnTo],
-  );
-
-  const go = useCallback(
-    (delta: 1 | -1) => {
-      if (phase.kind !== "ready" || !doc) return;
-      search.current++;
-      setCheckState(null);
-      direction.current = delta;
-      const nextIdx = stepIdx + delta;
-      if (nextIdx >= 0 && nextIdx < steps.length) return setStepIdx(nextIdx);
-      const nextPage = page + delta;
-      if (nextPage < 1) return;
-      if (nextPage > doc.numPages) return setPhase({ kind: "done" });
-      turnTo(nextPage);
-    },
-    [phase.kind, doc, stepIdx, steps.length, page, turnTo],
-  );
-
-  // Checks the build against this step's manual picture. Asked for (button, Space/Enter, voice "check"): always
-  // shows and speaks the result, as before. Automatic (Auto Mode): quiet unless it passes or finds a likely mistake.
-  // Either way a pass (isPass) starts a cancellable move to the next step.
-  const runCheck = useCallback(async (automatic = false): Promise<CheckResult | null> => {
-    if (!step || !target || check?.state === "checking") return null;
-    const frame = camera.current?.capture();
-    const sample = camera.current?.sample() ?? null; // the view at check time, to tell if the camera moves after
-    if (!frame) {
-      if (!automatic) setCheck({ state: "error", message: "Camera isn't ready yet." });
-      return null;
-    }
-    if (!automatic) {
-      // Pressing Check resumes a paused Auto Mode, and Auto Mode won't re-send the scene just checked.
-      const fine = camera.current?.sampleFine();
-      if (fine) markChecked(watch.current, fine, Date.now());
-      watch.current.misses = 0;
-      watch.current.notYet = 0;
-    }
-    const seq = ++checkSeq.current;
-    setAdvance(null);
-    setCheck({ state: "checking", auto: automatic });
-    setIssuePick(null);
-    try {
-      const res = await fetch("/api/check", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ frame, expected: target, previous: previous ?? undefined, instruction: step.instruction, watchFor: step.watchFor, parts: partLines(step.parts) }),
-      });
-      const data = await res.json();
-      if (seq !== checkSeq.current) return null; // the step changed or a newer check started
-      if (!res.ok) throw new Error(data.error);
-      const result = data as CheckResult;
-      const verdict = checkVerdict(result);
-      const pass = isPass(result);
-      const loud = !automatic || pass || (verdict === "fix" && result.confidence >= AUTO_SPEAK_FIX_CONFIDENCE);
-      voiceDone.current = Promise.resolve();
-      if (loud) {
-        setCheck({ state: "result", result, frame, id: seq, sample });
-        // A mistake is said with where it is ("The red 2x4 near the top left is rotated."), since the builder's eyes
-        // are on the bricks; everything else says Claude's own sentence, as before.
-        const spoken = verdict === "fix" ? spokenIssues(result.issues) : result.say;
-        if (!muted && spoken) voiceDone.current = speaker().say(spoken);
-      } else {
-        setCheckState(null);
-      }
-      if (pass) setAdvance({ id: seq, delay: automatic ? timingRef.current.advanceMs : MANUAL_ADVANCE_MS, waitForVoice: automatic, started: false });
-      return result;
-    } catch (e) {
-      if (seq !== checkSeq.current) return null;
-      if (automatic) setCheckState(null);
-      else setCheck({ state: "error", message: e instanceof Error && e.message ? e.message : "Check failed." });
-      return null;
-    }
-  }, [step, target, previous, check?.state, muted, setCheck]);
-
-  // The pending move to the next step. Auto Mode waits for the "verified" line to finish (the mic is off while it
-  // speaks), then gives 3 s to cancel: the Cancel button, saying "stop"/"cancel"/"wait", Back or Escape. A manual check
-  // moves on 1.8 s after the result, as before. It belongs to the check result on screen, so a step change, a new check
-  // or dismissing the result drops it; checkSeq is checked again before moving, so it can never skip an extra step.
-  const pending = advance && phase.kind === "ready" && check?.state === "result" && check.id === advance.id ? advance : null;
-  const pendingId = pending?.id;
-  const pendingDelay = pending?.delay ?? 0;
-  const pendingWaits = pending?.waitForVoice ?? false;
-  const goNext = useRef(go);
-  useEffect(() => {
-    goNext.current = go;
-  });
-  useEffect(() => {
-    if (pendingId == null) return;
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    (pendingWaits ? voiceDone.current : Promise.resolve()).then(() => {
-      if (cancelled) return;
-      setAdvance((a) => (a?.id === pendingId ? { ...a, started: true } : a));
-      timer = setTimeout(() => {
-        if (pendingId === checkSeq.current) goNext.current(1);
-      }, pendingDelay);
-    });
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [pendingId, pendingDelay, pendingWaits]);
-
-  const speakStep = useCallback(() => {
-    if (step && !muted) speak(spokenStep(step));
-  }, [step, muted]);
-
-  // Jumps to step n: on this page at once; otherwise reads pages ahead (then behind) until one has step n.
-  // Step numbers can repeat in a book (sub-builds restart at 1), so the nearest match wins.
-  const goToStep = useCallback(
-    async (n: number) => {
-      if (!doc || !reader || (phase.kind !== "ready" && phase.kind !== "done")) return;
-      const here = phase.kind === "ready" ? steps.findIndex((s) => s.number === n) : -1;
-      if (here >= 0) {
-        search.current++;
-        setCheckState(null);
-        if (here === stepIdx) speakStep();
-        else setStepIdx(here);
-        return;
-      }
-      const id = ++search.current;
-      const reach = doc.prebuilt ? doc.numPages : SEARCH_PAGES; // pre-read books are free to search
-      const order: number[] = [];
-      for (let k = 1; k <= reach && page + k <= doc.numPages; k++) order.push(page + k);
-      for (let k = 1; k <= reach && page - k >= 1; k++) order.push(page - k);
-      const wasPhase = phase;
-      setCheckState(null);
-      setPhase({ kind: "loading", label: `Finding step ${n}` });
-      for (let i = 0; i < order.length; i++) {
-        order.slice(i + 1, i + 3).forEach((p) => reader(p)); // read the next couple of pages meanwhile
-        const found = await reader(order[i]).steps.catch(() => [] as ExtractedStep[]);
-        if (search.current !== id) return; // cancelled (Next, Back, Restart, another jump)
-        if (found.some((s) => s.number === n)) {
-          landOn.current = n;
-          direction.current = 1;
-          setPhase({ kind: "loading", label: `Opening step ${n}` });
-          setPage(order[i]);
-          return;
-        }
-      }
-      if (search.current !== id) return;
-      setPhase(wasPhase);
-      const searchedAll = order.length >= doc.numPages - 1;
-      const message = searchedAll ? `I couldn't find step ${n} in this book.` : `I couldn't find step ${n} within ${SEARCH_PAGES} pages of this one.`;
-      setCheck({ state: "error", message });
-      if (!muted) speak(message);
-    },
-    [doc, reader, phase, steps, stepIdx, page, muted, speakStep, setCheck],
-  );
-
-  // Once a step is up, read the rest of the book in the background, two pages at a time (so the page in view
-  // never waits), so "where am I?" can compare against every step. Pre-read manuals are instant.
-  // Phones read one page at a time with a short rest between pages, and the screen re-lists the read pages at
-  // most every 2 s: rendering and re-rendering for every page made the whole app stutter while a book was read.
-  const ready = phase.kind === "ready";
-  useEffect(() => {
-    if (!reader || !doc || !ready) return;
-    let stopped = false;
-    let next = 1;
-    let shown = 0;
-    const show = () => {
-      if (stopped) return;
-      shown = Date.now();
-      setReadCount(reader.count());
-    };
-    const lane = async () => {
-      while (!stopped && next <= doc.numPages) {
-        const p = next++;
-        await reader(p).steps.catch(() => {});
-        if (Date.now() - shown > 2000) show();
-        if (isPhone) await new Promise((r) => setTimeout(r, 250));
-      }
-      show();
-    };
-    lane();
-    if (!isPhone) lane();
-    return () => {
-      stopped = true;
-    };
-  }, [reader, doc, ready, isPhone]);
-
-  // Opens a tile's step: on this page at once, otherwise opens its page at that step.
-  // Goes straight to a step on a page that's already read: no loading card in between (that flash, and the
-  // step strip re-centering from scratch after it, made jumping feel jumpy). False if the page isn't read yet.
-  const openReadPage = useCallback(
-    (toPage: number, pick: (steps: ExtractedStep[]) => number): boolean => {
-      const known = reader?.pages().find((pg) => pg.page === toPage);
-      if (!known) return false;
-      const idx = Math.max(0, Math.min(pick(known.steps), known.steps.length - 1));
-      const id = search.current;
-      landIdx.current = idx; // the page effect re-runs for the new page and lands on the same step
-      direction.current = 1;
-      known
-        .image()
-        .then((image) => {
-          if (search.current !== id) return; // another jump started meanwhile
-          setPageImage(image);
-          setSteps(known.steps);
-          setStepIdx(idx);
-          setPage(toPage);
-        })
-        .catch(() => turnTo(toPage));
-      return true;
-    },
-    [reader, turnTo],
-  );
-
-  const openTile = useCallback(
-    (t: Tile) => {
-      search.current++; // cancel any running "go to step" search
-      setCheckState(null);
-      if (t.page === page) {
-        const idx = steps.findIndex((s) => s.number === t.number);
-        if (idx >= 0) return setStepIdx(idx);
-      }
-      if (openReadPage(t.page, (found) => found.findIndex((s) => s.number === t.number))) return;
-      landOn.current = t.number;
-      direction.current = 1;
-      turnTo(t.page);
-    },
-    [page, steps, turnTo, openReadPage],
-  );
-
-  // Step strip: every step read so far as a small thumbnail, in a sideways scroll inside the step card. Tap one to
-  // jump straight there. Fills in as the book is read in the background.
-  const stripItems = useMemo(
-    () => (reader ? reader.pages().flatMap((pg) => pg.steps.map((st, idx) => ({ page: pg.page, idx, step: st, image: pg.image }))) : []),
-    [reader, readCount], // eslint-disable-line react-hooks/exhaustive-deps -- re-list whenever more pages are read
-  );
-  // Step pictures, cut once per page and kept (the strip shows them, "where am I?" sends them to Claude).
-  const pageThumbs = useRef(new Map<number, { steps: ExtractedStep[]; job: Promise<string[]> }>());
-  const thumbsFor = useCallback((pg: { page: number; steps: ExtractedStep[]; image: () => Promise<string> }) => {
-    const have = pageThumbs.current.get(pg.page);
-    if (have && have.steps === pg.steps) return have.job;
-    const job = pg
-      .image()
-      .then((image) => stepThumbs(image, pg.steps.map((st) => st.box)))
-      .catch(() => pg.steps.map(() => ""));
-    pageThumbs.current.set(pg.page, { steps: pg.steps, job });
-    return job;
-  }, []);
-  const [thumbs, setThumbs] = useState<Record<string, string>>({});
-  useEffect(() => {
-    if (!reader) return;
-    let cancelled = false;
-    (async () => {
-      for (const pg of reader.pages()) {
-        if (pg.steps.every((_, idx) => thumbs[`${pg.page}-${idx}`] !== undefined)) continue;
-        const urls = await thumbsFor(pg);
-        if (cancelled) return;
-        setThumbs((t) => ({ ...t, ...Object.fromEntries(urls.map((u, idx) => [`${pg.page}-${idx}`, u])) }));
-        await breathe();
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [stripItems]); // eslint-disable-line react-hooks/exhaustive-deps -- runs when more pages are read; `thumbs` only skips finished pages
-  const jumpToStep = useCallback(
-    (toPage: number, idx: number) => {
-      search.current++; // cancel any running "go to step" search
-      setCheckState(null);
-      if (toPage === page) return setStepIdx(idx);
-      if (openReadPage(toPage, () => idx)) return;
-      landIdx.current = idx;
-      direction.current = 1;
-      turnTo(toPage);
-    },
-    [page, turnTo, openReadPage],
-  );
-  // Centers the current step in the strip whenever it appears or the step changes. Keyed to the step, so swiping
-  // the strip doesn't get pulled back on every re-render. A strip that just appeared (still at the start) jumps
-  // straight there instead of sliding across every step.
-  const centerCurrent = useCallback(
-    (el: HTMLButtonElement | null) => {
-      if (!el) return;
-      const fresh = (el.parentElement?.scrollLeft ?? 0) === 0;
-      requestAnimationFrame(() => el.scrollIntoView({ inline: "center", block: "nearest", behavior: fresh ? "auto" : "smooth" }));
-    },
-    [stepKey], // eslint-disable-line react-hooks/exhaustive-deps -- a new callback per step re-runs it
-  );
-
-  // "Where am I?": compares the camera with every step picture read so far. Jumps to the next step, or back to
-  // an earlier step that looks broken. Asked for: always answers. Automatic: silent unless the step changes.
-  const findMyPlace = useCallback(
-    async (automatic = false) => {
-      if (!reader || !doc || locating) return;
-      const frame = camera.current?.capture();
-      const say = (text: string, problems?: string[]) => {
-        setNotice({ text, problems });
-        if (!muted) speak(text);
-      };
-      if (!frame) return automatic ? undefined : say("The camera isn't ready yet.");
-      const pages = reader.pages();
-      if (!pages.length) return automatic ? undefined : say("I haven't read any steps yet. Give me a moment.");
-      setLocating(true);
-      if (!automatic) setNotice({ text: "Finding your place…" });
-      try {
-        // The same step pictures the strip shows: already cut, so this is nearly free after the first time.
-        const tiles: Tile[] = [];
-        for (const pg of pages) {
-          const urls = await thumbsFor(pg);
-          for (const [idx, st] of pg.steps.entries()) {
-            if (tiles.length >= MAX_TILES) break;
-            tiles.push({ tile: tiles.length + 1, page: pg.page, number: st.number, image: urls[idx] });
-          }
-        }
-        const complete = reader.count() >= doc.numPages;
-        const result = await whereAmI({ frame, tiles, complete });
-        const place = decide(result, tiles, complete, step && { page, number: step.number }, automatic ? AUTO_MIN_CONFIDENCE : 0);
-        if (place.action === "fix" || place.action === "goto") {
-          autoJump.current = true;
-          say(place.say, place.action === "fix" ? place.problems : undefined);
-          openTile(place.target);
-        } else if (!automatic) {
-          say(place.say);
-        }
-      } catch (e) {
-        if (!automatic) say(e instanceof Error && e.message ? e.message : "I couldn't find your place.");
-      } finally {
-        setLocating(false);
-      }
-    },
-    [reader, doc, locating, muted, step, page, openTile, thumbsFor],
-  );
-
-  // A new step drops any check still running and a pending auto-advance (the old result hides itself: see `check`).
-  useEffect(() => {
-    checkSeq.current++;
-    // Auto Mode starts each step fresh: new "before" scene, no misses.
-    currentKey.current = stepKey;
-    resetForStep(watch.current);
-  }, [stepKey]);
-
-  // Step changes the builder made (Next, Back, voice, tapping) hold off automatic jumps for a while.
-  useEffect(() => {
-    if (autoJump.current) autoJump.current = false;
-    else lastManual.current = Date.now();
-  }, [stepKey]);
-
-
-  // Automatic detection. Watches a tiny grayscale camera sample on the phone (no network). Once the whole
-  // book is read it checks once, then again whenever the build has changed and the scene has held still for
-  // 1.5 s (hands out of the way). At most every 20 s, and not within 20 s of the builder changing step.
-  //
-  // Auto Mode shares this loop: while it's on and the step's picture is ready, the "changed, then still" moment runs the
-  // cheap step check (3 images) instead of "where am I" (up to 8 contact sheets). "Where am I" then only runs after 2
-  // "not done yet" results in a row, in case the builder skipped ahead. Unlike "where am I", Auto Mode keeps watching
-  // while a mistake is on screen, so it notices when the builder fixes it.
-  type AutoState = {
-    ready: boolean;
-    busy: boolean;
-    checking: boolean;
-    findMyPlace: (automatic?: boolean) => void;
-    autoMode: boolean;
-    canCheck: boolean;
-    pending: boolean;
-    runCheck: (automatic?: boolean) => Promise<CheckResult | null>;
-    timing: AutoTiming;
-  };
-  const autoState = useRef<AutoState>({
-    ready: false, busy: false, checking: false, findMyPlace: () => {}, autoMode: false, canCheck: false, pending: false, runCheck: async () => null, timing,
-  });
-  useEffect(() => {
-    // A mistake on screen pauses it too, so it doesn't jump away while the builder is fixing it.
-    const reviewing = check?.state === "result" && check.result.issues.length > 0;
-    autoState.current = {
-      ready,
-      busy: locating || check?.state === "checking" || reviewing,
-      checking: locating || check?.state === "checking",
-      findMyPlace,
-      autoMode,
-      canCheck: !!step && !!target && targetKey === stepKey,
-      pending: !!pending,
-      runCheck,
-      timing,
-    };
-  });
-  // Auto Mode samples faster at quicker speeds (250 ms at Fast) so "still for 0.8 s" is measured finely enough.
-  const sampleMs = autoMode ? timing.sampleMs : 500;
-  useEffect(() => {
-    if (!reader || !doc) return;
-    let prev: Uint8ClampedArray | null = null;
-    let stillSince = Date.now();
-    const timer = setInterval(() => {
-      const st = autoState.current;
-      if (st.autoMode && st.canCheck) {
-        const fine = camera.current?.sampleFine();
-        if (!fine) return;
-        const now = Date.now();
-        const w = watch.current;
-        const t = tick(w, fine, now, !st.ready || st.checking || st.pending || speaker().speaking, st.timing);
-        // For tuning under the venue lights: how much the table differs from the last checked scene.
-        console.log(
-          `[auto] change ${t.change == null ? "—" : (t.change * 100).toFixed(1) + "%"} (needs ${(AUTO_CHANGE_THRESHOLD * 100).toFixed(1)}%)` +
-            ` · motion ${(t.motion * 100).toFixed(1)}% · still ${(t.stillMs / 1000).toFixed(1)}s · ${t.reason}`,
-        );
-        // A miss stays on the status line until the scene moves again.
-        if (w.misses >= AUTO_MAX_MISSES) setAutoStatus(`Auto · paused after ${AUTO_MAX_MISSES} tries · press Check`);
-        else if (!st.checking && !st.pending && (w.misses === 0 || t.reason === "moving")) setAutoStatus("Auto · watching");
-        if (!t.check) return;
-        markChecked(w, fine, now);
-        setAutoStatus("Auto · checking…");
-        const key = currentKey.current;
-        st.runCheck(true).then((r) => {
-          if (currentKey.current !== key || (r && isPass(r))) return; // moved on meanwhile, or passed
-          const verdict = r ? checkVerdict(r) : "unsure";
-          setAutoStatus(verdict === "notyet" ? "Auto · not done yet" : verdict === "fix" ? "Auto · needs a fix" : "Auto · need a better look");
-          if (recordMiss(w, verdict) && reader.count() >= doc.numPages) autoState.current.findMyPlace(true);
-        });
-        return;
-      }
-      const sample = camera.current?.sample();
-      if (!sample) return;
-      const now = Date.now();
-      const moving = !prev || changed(prev, sample) > 0.02;
-      prev = sample;
-      if (moving) {
-        stillSince = now;
-        return;
-      }
-      if (now - stillSince < 1500) return;
-      if (!st.ready || st.busy || st.pending || speaker().speaking || reader.count() < doc.numPages) return;
-      if (firstAutoDone.current) {
-        if (now - lastAuto.current < 20000 || now - lastManual.current < 20000) return;
-        if (baseline.current && changed(baseline.current, sample) < 0.04) return; // nothing new on the table
-      }
-      firstAutoDone.current = true;
-      lastAuto.current = now;
-      baseline.current = sample;
-      st.findMyPlace(true);
-    }, sampleMs);
-    return () => clearInterval(timer);
-  }, [reader, doc, sampleMs]);
-
-  // The notice fades after a while (problem lists stay longer). Tap to dismiss.
-  useEffect(() => {
-    if (!notice || locating) return;
-    const t = setTimeout(() => setNotice(null), notice.problems?.length ? 20000 : 8000);
-    return () => clearTimeout(t);
-  }, [notice, locating]);
-
-  // Actions from the voice assistant's reply ("go back", "take me to step 5", "I'm stuck").
-  const onAction = useCallback(
-    (a: AssistAction) => {
-      switch (a.action) {
-        case "next":
-          return go(1);
-        case "prev":
-          return go(-1);
-        case "goto":
-          return void goToStep(a.goto_step);
-        case "add_substeps":
-          return setSubsteps({ key: stepKey, items: a.substeps, done: a.substeps.map(() => false) });
-      }
-    },
-    [go, goToStep, stepKey],
-  );
-
-  // Spoken commands from the voice panel; returns what to show in the transcript, or null to ask Claude instead.
-  const onCommand = useCallback(
-    (text: string): string | null => {
-      const c = matchCommand(text);
-      if (!c) return null;
-      if (c.kind === "stop") {
-        stopSpeaking();
-        if (pending) {
-          setAdvance(null);
-          return "Staying on this step.";
-        }
-        return "Stopped.";
-      }
-      if (c.kind === "auto") {
-        setAutoModeStored(c.on);
-        return c.on ? "Auto Mode on: I'll check each step when you finish it." : "Auto Mode off.";
-      }
-      if (c.kind === "speed") {
-        const now = readAutoSpeed(); // the saved value, current even if two commands arrive before a re-render
-        const next = c.to === "faster" ? stepSpeed(now, 1) : c.to === "slower" ? stepSpeed(now, -1) : SPEED_OF[c.to];
-        setAutoSpeedStored(next);
-        const name = PRESET_LABEL[presetAt(next) ?? "normal"];
-        if (!muted) speak(`Auto speed ${name.toLowerCase()}.`);
-        return `Auto speed: ${name}. ${describeTiming(timingFor(next))}.`;
-      }
-      if (phase.kind === "loading") return "One moment, still loading.";
-      switch (c.kind) {
-        case "next":
-          go(1);
-          return "Next step.";
-        case "back":
-          go(-1);
-          return "Previous step.";
-        case "repeat":
-          if (!step) return null;
-          speakStep();
-          return spokenStep(step);
-        case "check":
-          runCheck();
-          return "Checking your build…";
-        case "goto":
-          goToStep(c.step);
-          return `Going to step ${c.step}.`;
-        case "locate":
-          findMyPlace();
-          return "Finding your place…";
-      }
-    },
-    [phase.kind, go, step, speakStep, runCheck, goToStep, findMyPlace, pending, muted],
-  );
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (zoomOpen || photoOpen) return; // the zoom viewer handles its own keys
-      if (e.target instanceof HTMLElement && e.target.closest("button, input, textarea")) return; // a focused button handles its own Enter/Space
-      if (e.key === "a" || e.key === "A") setAutoModeStored(!readAutoMode());
-      if (e.key === "Escape") setAdvance(null);
-      if (e.key === "ArrowRight") go(1);
-      if (e.key === "ArrowLeft") go(-1);
-      if (e.key === " " || e.key === "Enter") {
-        e.preventDefault();
-        runCheck();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [go, runCheck, zoomOpen, photoOpen]);
-
-  // Phones are short: while a check result shows, the step card drops the extras (holograms, chips, tip) to make room.
-  const roomForResult = isPhone && check != null && check.state !== "checking";
-
-
+  const m = useBuildModel();
+  const { camera, liveCamera, manual, doc, page, pageImage, steps, stepIdx, phase, setPhase, target, setCheckState, issuePick, setIssuePick, showBoxes, setShowBoxes, setPhotoFor, setAdvance, muted, setMuted, showManual, setShowManual, zoomOpen, setZoomOpen, isPhone, sheetOpen, setSheetOpen, compact, stepKey, setSubsteps, activeSubs, check, verdict, photoOpen, setAttempt, preview, readCount, locating, notice, setNotice, autoMode, autoSpeed, autoStatus, step, part, restart, stripItems, thumbs, jumpToStep, centerCurrent, MAX_PARTS, marks, holoItems, holoState, runCheck, pending, onAction, onCommand, roomForResult } = m;
   return (
     <main className="relative h-dvh w-full overflow-hidden bg-ink text-white">
       <CameraFeed ref={camera} />
@@ -881,38 +43,38 @@ export default function BuildView() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-        {/\/645575\d\.pdf$/.test(manual?.pdfPath ?? "") && (
-          <Link
-            href="/practice/parrot"
-            aria-label="Practice in AR"
-            title="Practice in AR"
-            className="hud-panel grid h-9 place-items-center rounded-xl px-2.5 text-xs font-semibold text-holo transition hover:text-white"
+          {/\/645575\d\.pdf$/.test(manual?.pdfPath ?? "") && (
+            <Link
+              href="/practice/parrot"
+              aria-label="Practice in AR"
+              title="Practice in AR"
+              className="hud-panel grid h-9 place-items-center rounded-xl px-2.5 text-xs font-semibold text-holo transition hover:text-white"
+            >
+              AR
+            </Link>
+          )}
+          <button
+            onClick={() => restart()}
+            disabled={!doc}
+            aria-label="Restart from step 1"
+            title="Restart from step 1"
+            className="hud-panel grid h-9 w-9 place-items-center rounded-xl text-white/85 transition hover:text-white disabled:opacity-40"
           >
-            AR
-          </Link>
-        )}
-        <button
-          onClick={() => restart()}
-          disabled={!doc}
-          aria-label="Restart from step 1"
-          title="Restart from step 1"
-          className="hud-panel grid h-9 w-9 place-items-center rounded-xl text-white/85 transition hover:text-white disabled:opacity-40"
-        >
-          <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M3 12a9 9 0 1 0 3-6.7" />
-            <path d="M3 4v5h5" />
-          </svg>
-        </button>
-        <button
-          onClick={() => {
-            setMuted((m) => !m);
-            stopSpeaking();
-          }}
-          className="hud-panel h-9 rounded-xl px-3 text-xs font-medium text-white/85 transition hover:text-white"
-          aria-pressed={muted}
-        >
-          {muted ? "Voice off" : "Voice on"}
-        </button>
+            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 12a9 9 0 1 0 3-6.7" />
+              <path d="M3 4v5h5" />
+            </svg>
+          </button>
+          <button
+            onClick={() => {
+              setMuted((m) => !m);
+              stopSpeaking();
+            }}
+            className="hud-panel h-9 rounded-xl px-3 text-xs font-medium text-white/85 transition hover:text-white"
+            aria-pressed={muted}
+          >
+            {muted ? "Voice off" : "Voice on"}
+          </button>
         </div>
       </header>
 
@@ -975,7 +137,7 @@ export default function BuildView() {
             pageImage={null}
             stepNumber={step && stepLabel(step).replace(/^Step /, "")}
             glow={false}
-            onGlowChange={() => {}}
+            onGlowChange={() => { }}
             photo={{ label: photoLabel(check.result.issues), overlay: showBoxes && <IssueBoxes issues={check.result.issues} selected={issuePick} /> }}
             onClose={() => setPhotoFor(null)}
           />
@@ -1065,7 +227,7 @@ export default function BuildView() {
               <div className="flex max-w-full items-end gap-1 overflow-x-auto pb-4 [scrollbar-width:none] sm:gap-2">
                 {step.parts.slice(0, MAX_PARTS).map((p, i) => {
                   const h = holoItems?.[i];
-                  if (holoItems && !h?.cut) return null; // couldn't cut this one out of the manual
+                  if(holoItems && !h?.cut) return null; // couldn't cut this one out of the manual
                   const many = step.parts.length > 1;
                   const lots = step.parts.length > 2; // one part is as small as two, so the row never dominates the screen
                   return (
@@ -1079,9 +241,8 @@ export default function BuildView() {
                         // How many to grab: big and bold, amber when it's more than one so it isn't missed.
                         <span
                           aria-hidden
-                          className={`absolute right-0 top-0 rounded-lg px-2 py-0.5 text-base font-extrabold leading-tight shadow-[0_2px_10px_rgba(0,0,0,0.5)] ${
-                            p.qty > 1 ? "bg-amber-300 text-ink" : "bg-white text-ink"
-                          }`}
+                          className={`absolute right-0 top-0 rounded-lg px-2 py-0.5 text-base font-extrabold leading-tight shadow-[0_2px_10px_rgba(0,0,0,0.5)] ${p.qty > 1 ? "bg-amber-300 text-ink" : "bg-white text-ink"
+                            }`}
                         >
                           ×{p.qty}
                         </span>
@@ -1112,8 +273,8 @@ export default function BuildView() {
             dragElastic={0.35}
             dragSnapToOrigin
             onDragEnd={(_, info) => {
-              if (info.offset.y > 50 || info.velocity.y > 400) setSheetOpen(false);
-              else if (info.offset.y < -50 || info.velocity.y < -400) setSheetOpen(true);
+              if(info.offset.y > 50 || info.velocity.y > 400) setSheetOpen(false);
+              else if(info.offset.y < -50 || info.velocity.y < -400) setSheetOpen(true);
             }}
             className={`hud-panel holo-glow rounded-3xl touch-none sm:touch-auto ${compact ? "px-4 pb-3 pt-2" : "px-4 pb-4 pt-2 sm:p-5"}`}
           >
@@ -1225,9 +386,8 @@ export default function BuildView() {
                           onClick={() => jumpToStep(item.page, item.idx)}
                           aria-current={current ? "step" : undefined}
                           aria-label={`Go to step ${item.step.number}${item.step.sub ? `, part ${item.step.sub}` : ""}`}
-                          className={`relative h-10 w-14 shrink-0 snap-center overflow-hidden rounded-lg bg-white transition ${
-                            current ? "ring-2 ring-holo ring-offset-2 ring-offset-ink" : "opacity-60 hover:opacity-100"
-                          }`}
+                          className={`relative h-10 w-14 shrink-0 snap-center overflow-hidden rounded-lg bg-white transition ${current ? "ring-2 ring-holo ring-offset-2 ring-offset-ink" : "opacity-60 hover:opacity-100"
+                            }`}
                         >
                           {thumb ? <img src={thumb} alt="" className="h-full w-full object-contain" /> : <span className="absolute inset-0 animate-pulse bg-white/80" />}
                           <span className={`absolute left-0 top-0 rounded-br px-1 text-[9px] font-bold leading-[13px] ${current ? "bg-holo text-ink" : "bg-ink/80 text-white"}`}>
@@ -1283,9 +443,8 @@ export default function BuildView() {
                                 className="flex w-full items-start gap-2 text-left text-[13px] leading-snug"
                               >
                                 <span
-                                  className={`mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-full border text-[9px] font-bold ${
-                                    done ? "border-emerald-300 bg-emerald-300/20 text-emerald-200" : "border-white/30 text-white/55"
-                                  }`}
+                                  className={`mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-full border text-[9px] font-bold ${done ? "border-emerald-300 bg-emerald-300/20 text-emerald-200" : "border-white/30 text-white/55"
+                                    }`}
                                 >
                                   {done ? "✓" : i + 1}
                                 </span>
@@ -1315,13 +474,12 @@ export default function BuildView() {
                       // a mistake stays until Check again passes or Close; other results close on a tap
                       onClick={verdict === "fix" ? undefined : () => setCheckState(null)}
                       title={verdict === "fix" ? undefined : "Tap to dismiss"}
-                      className={`mt-4 overflow-hidden rounded-xl border p-3 text-sm ${verdict === "fix" ? "" : "cursor-pointer"} ${
-                        check.state === "error" || verdict === "unsure" || verdict === "notyet"
+                      className={`mt-4 overflow-hidden rounded-xl border p-3 text-sm ${verdict === "fix" ? "" : "cursor-pointer"} ${check.state === "error" || verdict === "unsure" || verdict === "notyet"
                           ? "border-white/15 bg-white/5 text-white/80"
                           : verdict === "pass"
                             ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-100"
                             : "border-red-400/50 bg-red-500/10 text-red-50"
-                      }`}
+                        }`}
                     >
                       {check.state === "error" ? (
                         check.message
@@ -1409,15 +567,15 @@ export default function BuildView() {
                 {/* Back / Next are gone: the step strip, voice ("next", "go to step 8") and auto-detect move between steps.
                     Phones hide it during a mistake review: "Check again" does the same and the photo needs the room. */}
                 <div className={`${isPhone && verdict === "fix" ? "hidden" : "flex"} mt-3 gap-2`}>
-                <button
-                  onClick={() => runCheck()}
-                  disabled={check?.state === "checking"}
-                  className="min-w-0 flex-1 rounded-xl py-2.5 text-sm bg-holo font-semibold text-ink transition hover:brightness-110 active:scale-[0.98] disabled:opacity-60"
-                >
-                  {check?.state === "checking" ? "Checking…" : "Check build"}
-                </button>
-                <AutoToggle on={autoMode} />
-                <AutoSpeedSettings speed={autoSpeed} />
+                  <button
+                    onClick={() => runCheck()}
+                    disabled={check?.state === "checking"}
+                    className="min-w-0 flex-1 rounded-xl py-2.5 text-sm bg-holo font-semibold text-ink transition hover:brightness-110 active:scale-[0.98] disabled:opacity-60"
+                  >
+                    {check?.state === "checking" ? "Checking…" : "Check build"}
+                  </button>
+                  <AutoToggle on={autoMode} />
+                  <AutoSpeedSettings speed={autoSpeed} />
                 </div>
               </>
             )}

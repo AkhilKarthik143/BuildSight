@@ -8,7 +8,7 @@ export async function stepThumbs(pageImage: string, boxes: ExtractedStep["box"][
   img.src = pageImage;
   await img.decode();
   const out: string[] = [];
-  for (const box of boxes) {
+  for(const box of boxes) {
     const x = Math.max(0, box.x - pad) * img.width;
     const y = Math.max(0, box.y - pad) * img.height;
     const w = Math.min(Math.min(1, box.w + 2 * pad) * img.width, img.width - x);
@@ -57,7 +57,7 @@ export async function withGrid(src: string): Promise<string> {
   g.fillStyle = "rgba(255,0,150,0.9)";
   g.lineWidth = 1;
   g.font = "11px sans-serif";
-  for (let i = 1; i < 10; i++) {
+  for(let i = 1;i < 10;i++) {
     const x = (canvas.width * i) / 10;
     const y = (canvas.height * i) / 10;
     g.beginPath();

@@ -126,3 +126,4 @@ Untested lib modules: claude, manuals, catalog, json, whereAmI, prebuilt, pdf, c
 
 ### Phase 3 — extraction checkpoints
 - Extracted auto preference stores/settings, image utilities, page reader, shared state types, viewport hook, labels and bounded queue without changing algorithms. Original suites, new helper tests, lint and typecheck pass.
+- Extracted shared build state, navigation/persistence, part guidance, step checks/countdowns, recognition, camera stillness/Auto Mode, and voice/shortcuts. All original test scripts remain unmodified. Hook dependency lists now explicitly include stable setter/ref inputs crossing module boundaries; ref aliases end in Ref for React compiler analysis. Removed the existing per-frame tuning console.log. Lint/typecheck/tests pass.

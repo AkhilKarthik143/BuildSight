@@ -1,5 +1,5 @@
 "use client";
-import { DEFAULT_SPEED,type AutoPreset } from "@/lib/autoCheck";
+import { DEFAULT_SPEED, type AutoPreset } from "@/lib/autoCheck";
 import { useSyncExternalStore } from "react";
 // Auto Mode on/off, remembered per device. Off by default, so the manual Check flow is unchanged until it's turned on.
 const AUTO_KEY = "buildsight:autoMode";
@@ -14,7 +14,7 @@ export function readAutoMode() {
 export function setAutoModeStored(on: boolean) {
   try {
     localStorage.setItem(AUTO_KEY, on ? "1" : "0");
-  } catch {}
+  } catch { }
   autoListeners.forEach((fn) => fn());
 }
 export function useAutoMode() {
@@ -41,7 +41,7 @@ export function readAutoSpeed() {
 export function setAutoSpeedStored(v: number) {
   try {
     localStorage.setItem(SPEED_KEY, String(Math.min(1, Math.max(0, v))));
-  } catch {}
+  } catch { }
   speedListeners.forEach((fn) => fn());
 }
 export function useAutoSpeed() {
