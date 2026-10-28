@@ -32,6 +32,29 @@ function safeStatus(status: number | undefined): number {
   return typeof status === "number" && status >= 400 && status <= 599 ? status : 502;
 }
 
+export type ClaudeUsageLog = {
+  event: "claude.usage";
+  model: string;
+  inputTokens: number | null;
+  outputTokens: number | null;
+};
+
+function tokenCount(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+/** One line per Claude call: model and token counts only. No prompt, image, or key. */
+export function logClaudeUsage(model: string, input: unknown, output: unknown): ClaudeUsageLog {
+  const line: ClaudeUsageLog = {
+    event: "claude.usage",
+    model,
+    inputTokens: tokenCount(input),
+    outputTokens: tokenCount(output),
+  };
+  console.info(JSON.stringify(line));
+  return line;
+}
+
 function splitDataUrl(dataUrl: string): { mediaType: ImageType; data: string } {
   const m = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
   if (!m || !IMAGE_TYPES.has(m[1])) throw new ClaudeError("Images must be JPEG, PNG, GIF or WebP data URLs.", 400);
@@ -68,6 +91,7 @@ async function viaAnthropic({ system, parts, effort = "low" }: Ask): Promise<str
       system,
       messages: [{ role: "user", content }],
     });
+    logClaudeUsage(ANTHROPIC_MODEL, response.usage?.input_tokens, response.usage?.output_tokens);
     if (response.stop_reason === "refusal") throw new ClaudeError("Claude declined this request.", 422);
     return response.content.map((b) => (b.type === "text" ? b.text : "")).join("");
   } catch (e) {
@@ -101,6 +125,7 @@ async function viaOpenRouter({ system, parts }: Ask): Promise<string> {
   });
   if (!res.ok) throw new ClaudeError("OpenRouter request failed.", res.status === 429 ? 429 : 502);
   const data = await res.json();
+  logClaudeUsage(OPENROUTER_MODEL, data?.usage?.prompt_tokens, data?.usage?.completion_tokens);
   return data?.choices?.[0]?.message?.content ?? "";
 }
 
@@ -157,6 +182,7 @@ export async function* streamClaude(system: string, turns: Turn[]): AsyncGenerat
       if (event.type === "content_block_delta" && event.delta.type === "text_delta") yield event.delta.text;
     }
     const final = await stream.finalMessage();
+    logClaudeUsage(ANTHROPIC_MODEL, final.usage?.input_tokens, final.usage?.output_tokens);
     if (final.stop_reason === "refusal") yield " Sorry, I can't help with that one.";
   } catch (e) {
     if (e instanceof Anthropic.AuthenticationError) throw new ClaudeError("Anthropic rejected the API key.", 500);

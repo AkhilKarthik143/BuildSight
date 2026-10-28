@@ -2,7 +2,10 @@
 // one per incoming request ("POST /api/check") and one per server-side fetch (Claude, Cartesia, Azure Speech).
 // Azure Monitor exports them as requests and dependencies, plus Live Metrics for a real-time dashboard.
 // The connection string comes from a Container App secret (APPLICATIONINSIGHTS_CONNECTION_STRING).
+// This module is imported only when that string is set (see src/instrumentation.ts).
+import { metrics } from "@opentelemetry/api";
 import { useAzureMonitor as startAzureMonitor } from "@azure/monitor-opentelemetry";
+import { bindApiMetrics, installApiRecorder } from "./lib/metrics.ts";
 
 process.env.OTEL_SERVICE_NAME ??= "buildsight"; // the "cloud role" name shown on the dashboard
 
@@ -16,3 +19,11 @@ startAzureMonitor({
   // Next.js's own spans already cover incoming requests and fetch calls; the package's HTTP hooks would count them twice.
   instrumentationOptions: { http: { enabled: false } },
 });
+
+const meter = metrics.getMeter("buildsight");
+installApiRecorder(
+  bindApiMetrics(
+    meter.createCounter("buildsight.api.requests"),
+    meter.createHistogram("buildsight.api.latency_ms", { unit: "ms" }),
+  ),
+);

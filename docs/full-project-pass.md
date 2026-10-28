@@ -29,7 +29,7 @@ Working notes for the production-readiness pass on `improve/full-project`. Newes
 - [x] pairing, session summary, typed fallback, mic meter, PWA, a11y, error states
 
 ### Phase 6: Observability and cost
-- [ ] route metrics, Claude usage log, README queries
+- [x] route metrics, Claude usage log, README queries
 
 ### Validation and cleanup
 - [ ] lint, typecheck, test, build, dev curl, 429, pairing round-trip
@@ -181,3 +181,10 @@ Open questions are the Microsoft booth, which physical sets, the 13-of-15 step-c
 - Errors: `src/lib/faults.ts` is the copy for camera denied, mic denied, offline, and rate limited. Camera denial is spoken from `CameraFeed`. Mic denial is the message `listen.ts` throws, and `VoicePanel` speaks the fault line. Offline uses the `offline` event and failed fetches. A 429 from check uses the same copy in `useBuildControls`. `scripts/test-faults.mjs` covers the copy and the message mapping.
 - New suites in `npm test`: `test:pairing`, `test:summary`, `test:faults`. No new runtime dependencies. No network.
 - `BuildView.tsx` is 389 lines after the summary wiring. `npm run lint` is clean and `npm test` passes, including the six original suites.
+
+### Phase 6
+
+- `src/instrumentation.node.ts` still starts Azure Monitor only because `src/instrumentation.ts` imports it when `APPLICATIONINSIGHTS_CONNECTION_STRING` is set. After startup it installs a recorder on `buildsight.api.requests` (counter, attributes `route` and `status`) and `buildsight.api.latency_ms` (histogram, attribute `route`). `recordApiRequest` in `src/lib/metrics.ts` returns immediately when the connection string is unset, so dev with no Insights config does not record.
+- **Assumption:** Custom metrics use the OpenTelemetry API already installed for `@azure/monitor-opentelemetry`. No new package was added. `useAzureMonitor` registers the global meter provider, and `metrics.getMeter("buildsight")` writes into that provider.
+- `logClaudeUsage` in `src/lib/claude.ts` writes one `console.info` JSON line per successful Claude call: `event`, `model`, `inputTokens`, `outputTokens`. Model, effort, and `max_tokens` are unchanged. Failed calls are not logged. The line is not a `console.log`.
+- README already names the metric and query tables. `npm run test:metrics` covers the no-op and the recorder. `test:claude` checks the usage line. Neither opens a socket.

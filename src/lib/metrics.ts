@@ -15,3 +15,15 @@ export function recordApiRequest(route: string, status: number, ms: number) {
 export function installApiRecorder(recorder: ApiRecorder) {
   root.__buildsightRecordApi = recorder;
 }
+
+type CounterLike = { add(value: number, attributes: Record<string, string>): void };
+type HistogramLike = { record(value: number, attributes: Record<string, string>): void };
+
+/** The recorder installed when Application Insights is on. Attributes stay short and contain no request bodies. */
+export function bindApiMetrics(requests: CounterLike, latency: HistogramLike): ApiRecorder {
+  return (route, status, ms) => {
+    const name = route.slice(0, 40);
+    requests.add(1, { route: name, status: String(status) });
+    latency.record(Number.isFinite(ms) && ms > 0 ? ms : 0, { route: name });
+  };
+}
