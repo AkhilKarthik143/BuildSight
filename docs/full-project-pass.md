@@ -23,7 +23,7 @@ Working notes for the production-readiness pass on `improve/full-project`. Newes
 - [x] extract into `src/components/build/`, BuildView under ~600 lines
 
 ### Phase 4: Tests + offline eval
-- [ ] api guard, claude, pure libs, eval-check, wired into `npm test`
+- [x] api guard, claude, pure libs, eval-check, wired into `npm test`
 
 ### Phase 5: Product features
 - [ ] pairing, session summary, typed fallback, mic meter, PWA, a11y, error states
@@ -158,3 +158,11 @@ Open questions are the Microsoft booth, which physical sets, the 13-of-15 step-c
 - **Assumption:** The six-hook plan in the split table collapsed into one controls hook plus a layout component. The closures share the same refs (`search`, `direction`, `watch`, and the rest). Splitting them further would pass those refs across hooks, which `react-hooks/immutability` rejects unless the local name ends in `Ref`. One hook keeps the original call order and the original dependency sets, plus the stable setters and refs the linter now requires. Adding those stable values does not change when the callbacks are recreated.
 - Props of `CameraFeed`, `VoicePanel`, `ManualPanel`, `ZoomViewer`, `PieceHologram`, and `CheckErrorOverlay` are unchanged. No new `any`. The existing Auto Mode `console.log` stayed.
 - `MAX_PARTS` (6) is one shared constant in `src/components/build/types.ts`, used by both the hologram effect and the step-card chips.
+
+### Phase 4
+
+- `scripts/test-claude.mjs` mocks `fetch`. Anthropic is used when `ANTHROPIC_API_KEY` is set, including when OpenRouter is also set. OpenRouter is used only when it is the only key. Neither request body includes `temperature`. A 500 body that repeats the key is not copied into the thrown error.
+- **Assumption:** `ClaudeError` no longer uses a TypeScript parameter property. Node's strip-types mode cannot load that syntax, and the test imports `src/lib/claude.ts`. `.status` is still set in the constructor. Model, effort, and `max_tokens` are unchanged.
+- Pure coverage: `firstJsonObject`, catalog `matches` / `metaLine` / `toResult` / `categoriesOf` / `mixed` (moved to `catalogQuery.ts` so the test does not load `catalog.json` through `@/`), `decide` (moved to `whereAmIDecide.ts`), and `uploadTitle`.
+- `parseCheckResult` is the check route's parser, now shared with `scripts/eval-check.mjs`. Fifteen fixtures cover a pass, the 0.7 edge, issue boxes, a missing box, `can_see: false` (confidence capped, issues dropped), low confidence, not-yet, malformed JSON, refusal text, prose before JSON, and a fenced reply. The script prints a confusion table and exits non-zero on a mismatch.
+- `npm test` runs `test:pure`, `test:claude`, and `test:eval` after the earlier suites. No fixture or test opens a socket.

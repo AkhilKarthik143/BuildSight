@@ -2,6 +2,7 @@
 // metadata under "manual:<id>", uploaded PDF bytes under "pdf:<id>".
 
 import { del, get, keys, set } from "idb-keyval";
+import { uploadTitle } from "./uploadTitle.ts";
 
 export type ManualSource = "lego" | "ikea" | "upload";
 
@@ -74,7 +75,7 @@ export async function addUpload(file: File): Promise<Manual> {
   const m: Manual = {
     id: newId(),
     source: "upload",
-    title: file.name.replace(/\.pdf$/i, "").replace(/[-_]+/g, " "),
+    title: uploadTitle(file.name),
     subtitle: `Uploaded · ${(file.size / 1_000_000).toFixed(1)} MB`,
     page: 1,
     addedAt: now,

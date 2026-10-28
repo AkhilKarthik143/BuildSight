@@ -11,10 +11,11 @@
 // Tiles are numbered 1, 2, 3... in book order (that's what the grid labels show and what Claude answers
 // with); each tile remembers its page and printed step number, since sub-builds restart at step 1.
 
-import type { BrokenTile, WhereAmIResult } from "@/app/api/where-am-i/route";
 import { encodeCanvas } from "@/lib/encode";
+import type { Tile, WhereAmIResult } from "./whereAmIDecide.ts";
 
-export type Tile = { tile: number; page: number; number: number; image: string };
+export type { Placement, Tile } from "./whereAmIDecide.ts";
+export { AUTO_MIN_CONFIDENCE, BROKEN_MIN_CONFIDENCE, decide } from "./whereAmIDecide.ts";
 
 // ── 1. Contact sheets ───────────────────────────────────────────────────────
 
@@ -97,62 +98,7 @@ export async function whereAmI(opts: { frame: string; tiles: Tile[]; complete: b
 }
 
 // ── 3. Decide what to do ────────────────────────────────────────────────────
-
-export type Placement =
-  | { action: "fix"; target: Tile; problems: string[]; say: string } // go back and repair this step first
-  | { action: "goto"; target: Tile; say: string } // carry on from this step
-  | { action: "stay"; say: string } // already on the right step
-  | { action: "done"; say: string } // the last step is finished
-  | { action: "unsure"; say: string }; // no usable answer (automatic checks stay quiet)
-
-// The app goes straight to Claude's best guess and just says it; it never asks the builder to confirm.
-// Automatic checks skip only near-useless answers (empty table, a hand in the way), so they don't wander.
-export const AUTO_MIN_CONFIDENCE = 0.3;
-// "Needs fixing" claims a piece is wrong, so it needs Claude to be fairly sure; otherwise just go to the step.
-export const BROKEN_MIN_CONFIDENCE = 0.6;
-
-/**
- * `tiles` are the tiles that were sent, in order; `current` is the step on screen. A broken earlier step
- * wins over moving on: fixing it first keeps later checks honest.
- */
-export function decide(
-  result: WhereAmIResult,
-  tiles: Tile[],
-  complete: boolean,
-  current?: { page: number; number: number },
-  minConfidence = 0,
-): Placement {
-  const byTile = new Map(tiles.map((t) => [t.tile, t]));
-  const still = complete ? "" : " I'm still reading the rest of the book.";
-  const reached = byTile.get(result.completed_tile);
-  if (result.confidence < minConfidence) return { action: "unsure", say: "I can't see the build clearly. Hold the phone steady over it." };
-  const broken =
-    result.confidence < BROKEN_MIN_CONFIDENCE
-      ? []
-      : result.broken.map((b) => ({ b, t: byTile.get(b.tile) })).filter((x): x is { b: BrokenTile; t: Tile } => !!x.t);
-  if (broken.length) {
-    const { b, t } = broken[0];
-    const more = broken.length > 1 ? ` There ${broken.length === 2 ? "is 1 more problem" : `are ${broken.length - 1} more problems`} after that.` : "";
-    return {
-      action: "fix",
-      target: t,
-      problems: broken.map((x) => `Step ${x.t.number}: ${x.b.part} ${x.b.problem}. ${x.b.fix}`),
-      say: `It seems ${reached ? `you're up to step ${reached.number}, but ` : ""}step ${t.number} needs fixing: the ${b.part} is ${b.problem}. ${b.fix}${more}`,
-    };
-  }
-  const next = tiles.find((t) => t.tile > result.completed_tile);
-  if (!next) {
-    return complete
-      ? { action: "done", say: `It seems you've finished ${reached ? `step ${reached.number}, ` : ""}the last step.` }
-      : { action: "unsure", say: `It seems you've finished everything I've read so far.${still} Ask again in a minute.` };
-  }
-  if (current && current.page === next.page && current.number === next.number) return { action: "stay", say: `You're on step ${next.number}.` };
-  return {
-    action: "goto",
-    target: next,
-    say: result.completed_tile === 0 ? `It seems nothing's built yet. Starting at step ${next.number}.` : `It seems you're on step ${next.number}. Going there now.`,
-  };
-}
+// decide() lives in whereAmIDecide.ts so tests can load it without the DOM. Re-exported above.
 
 // ── 4. Watching for changes (for automatic detection) ───────────────────────
 

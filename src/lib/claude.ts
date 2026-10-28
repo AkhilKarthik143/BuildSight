@@ -12,8 +12,10 @@ type Ask = {
 };
 
 export class ClaudeError extends Error {
-  constructor(message: string, readonly status = 502) {
+  readonly status: number;
+  constructor(message: string, status = 502) {
     super(message);
+    this.status = status;
   }
 }
 
@@ -41,6 +43,11 @@ export function claudeConfigured() {
 }
 
 let client: Anthropic | null = null;
+
+/** Drops the cached SDK client. Tests use this so a new key is not stuck on the first client. */
+export function resetClaudeForTests() {
+  client = null;
+}
 
 async function viaAnthropic({ system, parts, effort = "low" }: Ask): Promise<string> {
   client ??= new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY!.trim() });

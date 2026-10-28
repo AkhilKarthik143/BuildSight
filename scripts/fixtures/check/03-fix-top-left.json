@@ -1,0 +1,8 @@
+{
+  "reply": "{\"can_see\":true,\"step_complete\":false,\"confidence\":0.88,\"issues\":[{\"part\":\"red 2x4\",\"problem\":\"rotated\",\"fix\":\"Turn it.\",\"kind\":\"orientation\",\"box\":{\"left\":5,\"top\":4,\"right\":24,\"bottom\":22}}],\"say\":\"The red brick is rotated.\"}",
+  "verdict": "fix",
+  "pass": false,
+  "locations": [
+    "top left"
+  ]
+}

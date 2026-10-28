@@ -1,0 +1,7 @@
+{
+  "reply": "{\"step_complete\":true,\"confidence\":0.85,\"issues\":[],\"say\":\"Good.\"}",
+  "verdict": "pass",
+  "pass": true,
+  "locations": [],
+  "confidence": 0.85
+}

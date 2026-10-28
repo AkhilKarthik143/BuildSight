@@ -3,21 +3,13 @@
 
 import { guard } from "@/lib/apiGuard";
 import { asImage, asStringList, asText } from "@/lib/apiInput";
+import { parseCheckResult, type CheckResult } from "@/lib/checkParse";
 import { askClaude, ClaudeError, type Part } from "@/lib/claude";
-import { firstJsonObject } from "@/lib/json";
 import { LOOKALIKE_RULE, partsPrompt, readPartLines, type PartLine } from "@/lib/parts";
-import { parseIssueBox, parseIssueKind, type IssueBox, type IssueKind } from "@/lib/issueBox";
+
+export type { CheckResult };
 
 const MAX_IMAGE_CHARS = 4_000_000;
-
-export type CheckResult = {
-  step_complete: boolean;
-  confidence: number; // 0–1: how sure the step_complete call is (forced low when the camera can't see the build)
-  can_see: boolean; // false when the camera view doesn't show the build clearly (dark, covered, blurry, off-frame)
-  // box: where the mistake is in the CAMERA photo, normalized 0-1; missing when the model couldn't place it
-  issues: { part: string; problem: string; fix: string; kind?: IssueKind; box?: IssueBox }[];
-  say: string; // one short sentence to speak aloud
-};
 
 type CheckRequest = {
   frame?: string; // camera frame, data URL
@@ -61,36 +53,6 @@ function isImage(s: unknown): s is string {
   return asImage(s, MAX_IMAGE_CHARS) !== null;
 }
 
-function isIssue(i: unknown): i is Record<string, unknown> {
-  return !!i && typeof i === "object" && ["part", "problem", "fix"].some((k) => typeof (i as Record<string, unknown>)[k] === "string");
-}
-
-// Keeps the issue text even when its box is missing or bad.
-function toIssue(i: Record<string, unknown>): CheckResult["issues"][number] {
-  const text = (v: unknown) => (typeof v === "string" ? v : "");
-  return { part: text(i.part), problem: text(i.problem), fix: text(i.fix), kind: parseIssueKind(i.kind), box: parseIssueBox(i.box) };
-}
-
-// The model is asked for bare JSON; tolerate a stray code fence anyway.
-function parseResult(text: string): CheckResult | null {
-  try {
-    const r = firstJsonObject(text) as { can_see?: unknown; step_complete?: unknown; confidence?: unknown; issues?: unknown; say?: unknown } | null;
-    if (!r) return null;
-    if (typeof r.step_complete !== "boolean" || typeof r.confidence !== "number") return null;
-    const canSee = r.can_see !== false;
-    // Can't see the build: never report it as a confident pass or a list of problems.
-    return {
-      can_see: canSee,
-      step_complete: canSee && r.step_complete,
-      confidence: canSee ? Math.max(0, Math.min(1, r.confidence)) : Math.min(0.3, Math.max(0, r.confidence)),
-      issues: canSee && Array.isArray(r.issues) ? r.issues.filter(isIssue).map(toIssue) : [],
-      say: typeof r.say === "string" ? r.say : "",
-    };
-  } catch {
-    return null;
-  }
-}
-
 async function post(request: Request) {
   let body: CheckRequest;
   try {
@@ -128,7 +90,7 @@ async function post(request: Request) {
   const started = Date.now();
   try {
     const text = await askClaude({ system: SYSTEM_PROMPT, parts });
-    const result = parseResult(text);
+    const result = parseCheckResult(text);
     if (!result) return Response.json({ error: "Model reply wasn't valid JSON." }, { status: 502 });
     return Response.json({ ...result, latencyMs: Date.now() - started });
   } catch (e) {
