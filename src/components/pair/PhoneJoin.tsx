@@ -1,10 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useParams } from "next/navigation";
 import { parsePairMessage, type PairMessage } from "@/lib/pairing/schema";
 import { faultCopy } from "@/lib/faults";
 
-export default function PhoneJoin({ code }: { code: string }) {
+export default function PhoneJoin() {
+  const { code: raw } = useParams<{ code: string }>();
+  const code = raw.toUpperCase();
   const video = useRef<HTMLVideoElement>(null);
   const [status, setStatus] = useState("Joining…");
   const [last, setLast] = useState<PairMessage | null>(null);

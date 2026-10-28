@@ -32,8 +32,8 @@ Working notes for the production-readiness pass on `improve/full-project`. Newes
 - [x] route metrics, Claude usage log, README queries
 
 ### Validation and cleanup
-- [ ] lint, typecheck, test, build, dev curl, 429, pairing round-trip
-- [ ] DECISIONS.md full-project section, `.env.example`, no do-not-touch diffs
+- [x] lint, typecheck, test, build, dev curl, 429, pairing round-trip
+- [x] DECISIONS.md full-project section, `.env.example`, no do-not-touch diffs
 
 ## Notes
 
@@ -188,3 +188,14 @@ Open questions are the Microsoft booth, which physical sets, the 13-of-15 step-c
 - **Assumption:** Custom metrics use the OpenTelemetry API already installed for `@azure/monitor-opentelemetry`. No new package was added. `useAzureMonitor` registers the global meter provider, and `metrics.getMeter("buildsight")` writes into that provider.
 - `logClaudeUsage` in `src/lib/claude.ts` writes one `console.info` JSON line per successful Claude call: `event`, `model`, `inputTokens`, `outputTokens`. Model, effort, and `max_tokens` are unchanged. Failed calls are not logged. The line is not a `console.log`.
 - README already names the metric and query tables. `npm run test:metrics` covers the no-op and the recorder. `test:claude` checks the usage line. Neither opens a socket.
+
+### Validation (2026-10-27)
+
+- `npm run lint`: exit 0, no output.
+- `npm run typecheck`: exit 0 after `next typegen`.
+- `npm test`: exit 0. Suites: boxes 66/66, commands 67/67, parts, assist, auto 51/51, practice, guard, steps 8/8, pure, claude, eval 15/15, pairing, summary, faults, metrics.
+- `npm run build`: exit 0 after wrapping `/pair/[code]` in `Suspense`. Cache Components rejects `useParams()` during prerender unless a parent Suspense boundary exists. The build page already uses that pattern. The pair page now does too, and `PhoneJoin` reads the code.
+- Dev server on port 3000, then stopped: `200 /`, `200 /practice/parrot`, `200 /practice/pc`. Two SSE clients on room `DDE8DZ` both received `{"type":"transcript","text":"round trip","from":"phone"}` after `POST /api/pair/publish` returned `{"ok":true}`. Forty `POST /api/pair` creates: 20 returned 200, 20 returned 429 with `Retry-After: 1` and `{"error":"Too many requests. Try again shortly."}`. After 1.2s the next create returned 200.
+- `git diff main` does not touch `public/steps/**`, `src/data/catalog.json`, `scripts/catalog-cache.json`, `scripts/preread.py`, `scripts/hires.py`, `DEPLOY-AZURE.md`, or `CREDITS.md`. `src/lib/claude.ts` gained `logClaudeUsage` only. `ANTHROPIC_MODEL`, `OPENROUTER_MODEL`, `MAX_TOKENS`, and the effort values are the same lines as `main`.
+- `.env.example` already lists `APPLICATIONINSIGHTS_CONNECTION_STRING`, `DAILY_CLAUDE_CALL_LIMIT`, and `WEBPUBSUB_CONNECTION_STRING` with empty placeholders.
+- The only `console.log` added against `main` is the existing Auto Mode `[auto] change` line, moved with the BuildView split. Claude usage uses `console.info`.

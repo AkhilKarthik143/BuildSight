@@ -1,9 +1,10 @@
-"use client";
-
-import { useParams } from "next/navigation";
+import { Suspense } from "react";
 import PhoneJoin from "@/components/pair/PhoneJoin";
 
 export default function PairPage() {
-  const { code } = useParams<{ code: string }>();
-  return <PhoneJoin code={code.toUpperCase()} />;
+  return (
+    <Suspense fallback={null}>
+      <PhoneJoin />
+    </Suspense>
+  );
 }
