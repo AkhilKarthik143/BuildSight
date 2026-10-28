@@ -25,6 +25,11 @@ const MAX_TOKENS = 16000;
 type ImageType = "image/jpeg" | "image/png" | "image/gif" | "image/webp";
 const IMAGE_TYPES = new Set<string>(["image/jpeg", "image/png", "image/gif", "image/webp"]);
 
+// Upstream messages sometimes echo the request, including the key. Never forward them.
+function safeStatus(status: number | undefined): number {
+  return typeof status === "number" && status >= 400 && status <= 599 ? status : 502;
+}
+
 function splitDataUrl(dataUrl: string): { mediaType: ImageType; data: string } {
   const m = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
   if (!m || !IMAGE_TYPES.has(m[1])) throw new ClaudeError("Images must be JPEG, PNG, GIF or WebP data URLs.", 400);
@@ -62,7 +67,7 @@ async function viaAnthropic({ system, parts, effort = "low" }: Ask): Promise<str
     if (e instanceof ClaudeError) throw e;
     if (e instanceof Anthropic.AuthenticationError) throw new ClaudeError("Anthropic rejected the API key.", 500);
     if (e instanceof Anthropic.RateLimitError) throw new ClaudeError("Rate limited by Anthropic. Try again in a moment.", 429);
-    if (e instanceof Anthropic.APIError) throw new ClaudeError(`Anthropic error ${e.status}: ${e.message}`);
+    if (e instanceof Anthropic.APIError) throw new ClaudeError("Claude request failed.", safeStatus(e.status));
     throw new ClaudeError("Couldn't reach Anthropic.");
   }
 }
@@ -87,7 +92,7 @@ async function viaOpenRouter({ system, parts }: Ask): Promise<string> {
       ],
     }),
   });
-  if (!res.ok) throw new ClaudeError(`OpenRouter error ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  if (!res.ok) throw new ClaudeError("OpenRouter request failed.", res.status === 429 ? 429 : 502);
   const data = await res.json();
   return data?.choices?.[0]?.message?.content ?? "";
 }
@@ -149,7 +154,7 @@ export async function* streamClaude(system: string, turns: Turn[]): AsyncGenerat
   } catch (e) {
     if (e instanceof Anthropic.AuthenticationError) throw new ClaudeError("Anthropic rejected the API key.", 500);
     if (e instanceof Anthropic.RateLimitError) throw new ClaudeError("Rate limited by Anthropic. Try again in a moment.", 429);
-    if (e instanceof Anthropic.APIError) throw new ClaudeError(`Anthropic error ${e.status}: ${e.message}`);
+    if (e instanceof Anthropic.APIError) throw new ClaudeError("Claude request failed.", safeStatus(e.status));
     throw new ClaudeError("Couldn't reach Anthropic.");
   }
 }

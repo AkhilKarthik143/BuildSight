@@ -1,6 +1,9 @@
 // Text to speech with Cartesia. Streams raw audio (32-bit float PCM, mono, 24 kHz) straight through to the browser,
 // which starts playing as the first bytes arrive. The key stays on the server.
 
+import { guard } from "@/lib/apiGuard";
+import { asText } from "@/lib/apiInput";
+
 const CARTESIA_URL = "https://api.cartesia.ai/tts/bytes";
 const CARTESIA_VERSION = "2026-08-14";
 const MODEL = "sonic-3.6";
@@ -8,12 +11,12 @@ const VOICE = process.env.CARTESIA_VOICE_ID || "4bc3cb8c-adb9-4bb8-b5d5-cbbef950
 const SAMPLE_RATE = 24000; // the browser player in lib/speech.ts assumes this rate
 const MAX_CHARS = 1500;
 
-export async function POST(request: Request) {
+async function post(request: Request) {
   const key = process.env.CARTESIA_API_KEY?.trim();
   if (!key) return Response.json({ error: "Voice isn't set up on the server (missing Cartesia key)." }, { status: 503 });
 
-  const { text } = (await request.json().catch(() => ({}))) as { text?: string };
-  const transcript = text?.trim().slice(0, MAX_CHARS);
+  const { text } = (await request.json()) as { text?: unknown };
+  const transcript = asText(text, MAX_CHARS);
   if (!transcript) return Response.json({ error: "Nothing to say." }, { status: 400 });
 
   let res: Response;
@@ -42,3 +45,5 @@ export async function POST(request: Request) {
     headers: { "Content-Type": "audio/pcm", "Cache-Control": "no-store", "X-Accel-Buffering": "no" },
   });
 }
+
+export const POST = guard("tts", post);

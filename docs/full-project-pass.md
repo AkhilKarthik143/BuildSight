@@ -17,7 +17,7 @@ Working notes for the production-readiness pass on `improve/full-project`. Newes
 - [x] README replaced
 
 ### Phase 2: API hardening
-- [ ] rate limit, guard, validation, host allowlist, security headers, daily ceiling
+- [x] rate limit, guard, validation, host allowlist, security headers, daily ceiling
 
 ### Phase 3: Split BuildView.tsx
 - [ ] extract into `src/components/build/`, BuildView under ~600 lines
@@ -131,9 +131,23 @@ Open questions are the Microsoft booth, which physical sets, the 13-of-15 step-c
 - **Assumption:** SVG and other non-JPEG/PNG/GIF/WebP data URLs are rejected. The old check only required a `data:image/` prefix.
 - **Assumption:** Error responses no longer include upstream body text or the `raw` model reply. Success JSON shapes stay the same.
 - **Assumption:** README's script table names suites added in later phases. They are part of the same branch before the pass is done.
+- **Assumption:** Relative imports inside the new server modules use a `.ts` extension so `node --experimental-strip-types` can load them. `allowImportingTsExtensions` is on because `noEmit` is already set. Next still resolves `@/` imports in the routes.
+- **Assumption:** A present but invalid `frame` on `/api/assist` is a 400. Omitting the frame still sends the question without a photo.
+- **Assumption:** Azure Speech region must match `^[a-z0-9]+$` before it is placed in a hostname. A bad value returns the existing "not set up" 503.
 
 ### Phase 1
 
 - `npm run typecheck` is `next typegen && tsc --noEmit`.
 - CI runs on push and pull_request: `npm ci`, lint, typecheck, test, build, npm cache. `azure-image.yml` was not edited.
 - README covers purpose, demo flow, data flow, env names, scripts, deploy pointer, limitations, and credits.
+
+### Phase 2
+
+- `src/lib/rateLimit.ts`: token bucket on `globalThis`, key is first `x-forwarded-for` hop plus route. Cheap routes (`speech-token` capacity 20, `search` 12) refill faster than Claude routes (`check`/`assist`/`vision` 6 at 0.2/s, `where-am-i` 4 at 0.1/s, `extract` 8, `locate` 12, `tts` 12). Stale keys drop after 10 minutes. The map stays at or under 2,000 keys. Documented as per-instance.
+- `src/lib/apiGuard.ts` wraps all 9 routes. Order: 429 + `Retry-After`, then 413 over the body cap (8 MB for frame routes, 64 KB for text/GET), then 400 for bad JSON, then the daily ceiling. The route's success `Response` is returned unchanged. Unexpected throws become `{ error: "Request failed." }` with no upstream text.
+- Image fields accept only `data:image/(jpeg|png|gif|webp);base64,`. Strings are clamped (question 2,000, instruction 500, part name still 120, where-am-i sheets 8 with at most 40 integer tile numbers).
+- `src/lib/hosts.ts` plus `src/proxy.ts`: PDF paths must be `/manual-pdf/lego/<digits>.pdf` or an IKEA `assembly_instructions` PDF. Search fetches check the URL host before `fetch`. The hardcoded IKEA search API is allowed only for that fixed URL.
+- Security headers on `/:path*`: `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy: camera=(self), microphone=(self)`.
+- `DAILY_CLAUDE_CALL_LIMIT` (default off) counts well-formed requests to the six Claude routes per UTC day in this process. Over the cap: 429 + `Retry-After` until the next UTC midnight, and the handler is not called.
+- Claude errors no longer include `e.message` or the OpenRouter response body. Check, extract, and where-am-i no longer return a `raw` model snippet.
+- `scripts/test-api-guard.mjs` is `npm run test:guard` and part of `npm test`. It covers burst, refill, per-IP isolation, eviction, 413, 400, the ceiling, and the host allowlist. No network.

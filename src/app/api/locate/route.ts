@@ -1,5 +1,7 @@
 // Finds one part in a step's manual picture: where it's drawn in the parts box, and where it goes on the build.
 
+import { guard } from "@/lib/apiGuard";
+import { asImage } from "@/lib/apiInput";
 import { askClaude, ClaudeError } from "@/lib/claude";
 import { firstJsonObject } from "@/lib/json";
 import { LOOKALIKE_RULE, partsPrompt, readPartLines } from "@/lib/parts";
@@ -35,7 +37,7 @@ function findText(part: string, parts: ReturnType<typeof readPartLines>): string
   return `Find this part: ${part}\nAll parts in this step's parts box:\n${partsPrompt(parts)}\n${LOOKALIKE_RULE} Box only the named part; never box a different one.`;
 }
 
-export async function POST(request: Request) {
+async function post(request: Request) {
   // parts (optional): every part of this step, described by appearance, so lookalikes in the parts box aren't confused
   let body: { image?: unknown; part?: unknown; parts?: unknown };
   try {
@@ -43,8 +45,9 @@ export async function POST(request: Request) {
   } catch {
     return Response.json({ error: "Body must be JSON." }, { status: 400 });
   }
-  const { image, part } = body;
-  if (typeof image !== "string" || !image.startsWith("data:image/") || image.length > MAX_IMAGE_CHARS) {
+  const image = asImage(body.image, MAX_IMAGE_CHARS);
+  const part = body.part;
+  if (!image) {
     return Response.json({ error: "Send `image` as an image data URL." }, { status: 400 });
   }
   if (typeof part !== "string" || !part.trim() || part.length > 120) {
@@ -68,3 +71,5 @@ export async function POST(request: Request) {
     return Response.json({ error: err.message }, { status: err.status });
   }
 }
+
+export const POST = guard("locate", post);
