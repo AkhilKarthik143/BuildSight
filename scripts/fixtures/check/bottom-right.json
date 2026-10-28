@@ -1,0 +1,12 @@
+{
+  "name": "bottom-right",
+  "provenance": "hand-authored model-output regression fixture; not a real-photo observation",
+  "raw": "{\"can_see\": true, \"step_complete\": true, \"confidence\": 0.95, \"issues\": [{\"part\": \"red brick\", \"problem\": \"rotated\", \"fix\": \"Turn it\", \"kind\": \"missing_part\", \"box\": {\"left\": 75, \"right\": 95, \"top\": 75, \"bottom\": 95}}], \"say\": \"Looks correct.\"}",
+  "expected": {
+    "verdict": "fix",
+    "pass": false,
+    "locations": [
+      "bottom right"
+    ]
+  }
+}

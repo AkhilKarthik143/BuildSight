@@ -1,0 +1,12 @@
+{
+  "name": "visible-error",
+  "provenance": "hand-authored model-output regression fixture; not a real-photo observation",
+  "raw": "{\"can_see\": true, \"step_complete\": false, \"confidence\": 0.95, \"issues\": [{\"part\": \"red brick\", \"problem\": \"rotated\", \"fix\": \"Turn it\", \"kind\": \"orientation\", \"box\": {\"left\": 10, \"top\": 10, \"right\": 30, \"bottom\": 30}}], \"say\": \"Looks correct.\"}",
+  "expected": {
+    "verdict": "fix",
+    "pass": false,
+    "locations": [
+      "top left"
+    ]
+  }
+}

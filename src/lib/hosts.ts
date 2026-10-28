@@ -12,7 +12,7 @@ function httpsHost(raw: string): URL | null {
   } catch {
     return null;
   }
-  if (url.protocol !== "https:") return null;
+  if (url.protocol !== "https:" || (url.port && url.port !== "443")) return null;
   if (url.username || url.password) return null;
   const host = url.hostname.toLowerCase();
   if (!/^[a-z0-9.-]+$/.test(host)) return null;
@@ -29,7 +29,7 @@ export function isAllowedManualUrl(raw: string): boolean {
 /** The one hardcoded IKEA search endpoint. Never use this for a URL built from user input. */
 export function isIkeaSearchUrl(raw: string): boolean {
   const url = httpsHost(raw);
-  return !!url && url.hostname === IKEA_SEARCH_HOST;
+  return !!url && url.hostname === IKEA_SEARCH_HOST && url.pathname === "/us/en/search-result-page";
 }
 
 /**

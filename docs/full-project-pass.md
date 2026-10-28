@@ -1,3 +1,5 @@
+> Historical phase log. The later consolidation and current validation details are in [hardening-validation.md](hardening-validation.md). Rate settings, body limits and BuildView decomposition below describe the initial pass.
+
 # BuildSight full-project pass
 
 Working notes for the production-readiness pass on `improve/full-project`. Newest notes at the bottom of each section. Assumptions are marked **Assumption**.

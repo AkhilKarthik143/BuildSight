@@ -45,3 +45,6 @@ next-env.d.ts
 
 # taste-skill review output (screenshots, inspector reports)
 .taste-skill/
+
+# Local browser review artifacts
+.agent-screenshots/

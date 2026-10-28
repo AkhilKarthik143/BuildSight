@@ -1,7 +1,4 @@
 import type { CheckResult } from "@/app/api/check/route";
-
-export const MAX_PARTS = 6;
-
 export type Phase = { kind: "loading"; label: string } | { kind: "ready" } | { kind: "error"; message: string } | { kind: "done" };
 export type Check = { state: "checking"; auto?: boolean } | { state: "result"; result: CheckResult; frame: string; id: number; sample: Uint8ClampedArray | null } | { state: "error"; message: string };
 // A pending move to the next step after a pass. `id` is the check it came from: it lives only while that result is on

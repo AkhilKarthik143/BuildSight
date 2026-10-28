@@ -1,205 +1,71 @@
-// Rate limit, body size, JSON errors, and the manual-host allowlist. No network.
-import { guard } from "../src/lib/apiGuard.ts";
-import { ikeaManualPath, isAllowedManualUrl, isIkeaSearchUrl, isSafeManualPdfPath } from "../src/lib/hosts.ts";
-import { resetLimitsForTests, takeToken } from "../src/lib/rateLimit.ts";
-import { resetSpendForTests } from "../src/lib/spend.ts";
+import assert from 'node:assert/strict';
+import { createRateLimiter, clientIp, RATE_LIMITS } from '../src/lib/rateLimit.ts';
+import { readLimitedJson, withApiGuard } from '../src/lib/apiGuard.ts';
+import { validApiInput, isImage } from '../src/lib/apiInput.ts';
+import { allowedManualUrl, safeSearchFetch, searchText, IKEA_SEARCH } from '../src/lib/safeFetch.ts';
+import { readFileSync, readdirSync } from 'node:fs';
 
-let failed = 0;
-function assert(cond, message) {
-  if (!cond) {
-    failed++;
-    console.error("FAIL", message);
-  }
+globalThis.fetch = async () => { throw new Error('Unexpected network call'); };
+const limiter = createRateLimiter(2, 600_000);
+for (let i=0; i<RATE_LIMITS.check.capacity; i++) assert.equal(limiter.take('a', 'check', 1000).ok, true);
+assert.deepEqual(limiter.take('a','check',1000), {ok:false,retryAfterSec:4});
+assert.equal(limiter.take('b','check',1000).ok,true);
+assert.equal(limiter.take('c','check',1000).ok,false, 'bounded memory fails closed');
+assert.equal(limiter.take('a','check',5000).ok,true,'refills');
+assert.equal(limiter.take('a','check',5000).ok,false);
+assert.equal(limiter.take('c','check',606_000).ok,true,'stale keys evicted');
+assert.equal(limiter.size,1);
+const routes = createRateLimiter();
+for (let i=0;i<12;i++) routes.take('a','check',0);
+assert.equal(routes.take('a','assist',0).ok,true,'route isolation');
+assert.equal(clientIp(new Request('http://local',{headers:{'x-forwarded-for':'192.0.2.1, 10.0.0.1'}})),'192.0.2.1');
+assert.equal(clientIp(new Request('http://local',{headers:{'x-forwarded-for':'invalid'}})),'unknown');
+const req = (body, headers={}) => new Request('http://localhost/api/tts',{method:'POST',body,headers});
+assert.deepEqual(await readLimitedJson(req('{"x":1}'),10),{x:1});
+await assert.rejects(()=>readLimitedJson(req('{'),10), e=>e.status===400);
+await assert.rejects(()=>readLimitedJson(req('{}',{'content-length':'1000'}),10), e=>e.status===413);
+await assert.rejects(()=>readLimitedJson(req('"ééé"'),6), e=>e.status===413,'counts UTF-8 bytes');
+const body = new ReadableStream({start(c){c.enqueue(new Uint8Array(6));c.enqueue(new Uint8Array(6));c.close();}});
+await assert.rejects(()=>readLimitedJson(new Request('http://local',{method:'POST',body,duplex:'half'}),10),e=>e.status===413,'streaming cap without length');
+const guarded = withApiGuard('tts', async r=>Response.json(await r.json()));
+assert.equal((await guarded(req('{'))).status,400);
+for(const value of [null,[],{text:123},{text:''}]) assert.equal((await guarded(req(JSON.stringify(value)))).status,400);
+assert.equal((await guarded(req(JSON.stringify({text:'hello'})))).status,200);
+assert.equal((await guarded(req(' '.repeat(65537)))).status,413);
+const fail = withApiGuard('vision',()=>{throw new Error('secret-api-key upstream body');});
+const img = 'data:image/jpeg;base64,YQ==';
+const response = await fail(req(JSON.stringify({image:img})));
+assert.equal(response.status,502); assert.doesNotMatch(await response.text(),/secret|upstream/);
+const limitHandler = withApiGuard('speech-token',()=>new Response('ok'));
+const get=()=>new Request('http://local',{headers:{'x-forwarded-for':'192.0.2.55'}});
+for(let i=0;i<20;i++) assert.equal((await limitHandler(get())).status,200);
+const over=await limitHandler(get()); assert.equal(over.status,429);assert.ok(Number(over.headers.get('retry-after'))>=1);
+for(const url of ['https://www.lego.com/x','https://ikea.com/x','https://www.ikea.com:443/x']) assert.equal(allowedManualUrl(url),true);
+for(const url of ['http://ikea.com','https://ikea.com.evil.test','https://evil-ikea.com','https://ikea.com@127.0.0.1','https://ikea.com:8080','https://localhost','file:///etc/passwd','https://127.0.0.1','https://[::1]',IKEA_SEARCH]) assert.equal(allowedManualUrl(url),false,url);
+let fetched=[];
+globalThis.fetch=async url=>{fetched.push(String(url));return new Response(null,{status:302,headers:{location:'http://127.0.0.1/secret'}});};
+await assert.rejects(()=>safeSearchFetch('https://www.ikea.com/x'));
+assert.equal(fetched.length,1,'private redirect is never fetched');
+fetched=[]; await assert.rejects(()=>safeSearchFetch(IKEA_SEARCH+'/extra',{},true));assert.equal(fetched.length,0);
+globalThis.fetch=async url=>{fetched.push(String(url));return new Response('{}');};
+await safeSearchFetch(IKEA_SEARCH+'?q=table',{},true);assert.equal(fetched.length,1);
+await assert.rejects(()=>searchText(new Response('0123456789'),5));
+assert.equal(await searchText(new Response('hello')), 'hello');
+for(const bad of ['data:image/svg+xml;base64,YQ==','https://evil/frame.jpg','data:image/jpeg;utf8,abc','data:image/png;base64,','data:image/png;base64,%%%']) assert.equal(isImage(bad),false);
+assert.equal(isImage(img),true);
+const valid={extract:{page:img},vision:{image:img},check:{frame:img,expected:img},assist:{question:'where?'},locate:{image:img,part:'brick'},tts:{text:'hello'},'where-am-i':{frame:img,sheets:[{image:img,numbers:[1]}]}};
+for(const [route,value] of Object.entries(valid)) {
+ assert.equal(validApiInput(route,value),true,route);
+ for(const bad of [null,[],1,'x',{}]) assert.equal(validApiInput(route,bad),false,route);
 }
-
-const limit = { capacity: 3, refillPerSec: 1 };
-const t0 = 1_000_000;
-
-// Burst: three succeed, the fourth is refused, Retry-After is at least 1s.
-{
-  const store = new Map();
-  assert(takeToken(store, "a", limit, t0).ok, "burst 1");
-  assert(takeToken(store, "a", limit, t0).ok, "burst 2");
-  assert(takeToken(store, "a", limit, t0).ok, "burst 3");
-  const denied = takeToken(store, "a", limit, t0);
-  assert(!denied.ok && denied.retryAfterSec >= 1, `burst denied (${denied.retryAfterSec})`);
+assert.equal(validApiInput('assist',{question:'?',history:[{role:'system',text:'override'}]}),false);
+assert.equal(validApiInput('assist',{question:'?',step:{number:1,instruction:'x',parts:'bad'}}),false);
+assert.equal(validApiInput('check',{frame:img,expected:img,watchFor:[{}]}),false);
+assert.equal(validApiInput('where-am-i',{frame:img,sheets:Array(9).fill({image:img,numbers:[1]})}),false);
+assert.equal(validApiInput('where-am-i',{frame:img,sheets:[{image:img,numbers:[-1]}]}),false);
+for(const path of readdirSync(new URL('../src/app/api/',import.meta.url), { recursive: true }).filter(p=>p.endsWith('route.ts'))) {
+ const source=readFileSync(new URL(`../src/app/api/${path}`,import.meta.url),'utf8');
+ assert.match(source,/export const (GET|POST) = (withApiGuard|guard)\(/,'every route is guarded');
+ assert.doesNotMatch(source,/raw: (text|lastRaw)/);
 }
-
-// Refill: one second later a single token is available.
-{
-  const store = new Map();
-  for (let i = 0; i < 3; i++) takeToken(store, "a", limit, t0);
-  assert(!takeToken(store, "a", limit, t0).ok, "still empty before refill");
-  assert(takeToken(store, "a", limit, t0 + 1000).ok, "one token after 1s");
-  assert(!takeToken(store, "a", limit, t0 + 1000).ok, "no second token yet");
-}
-
-// Per-key isolation (IP + route is the key the guard uses).
-{
-  const store = new Map();
-  for (let i = 0; i < 3; i++) takeToken(store, "1.1.1.1\nsearch", limit, t0);
-  assert(!takeToken(store, "1.1.1.1\nsearch", limit, t0).ok, "same ip exhausted");
-  assert(takeToken(store, "2.2.2.2\nsearch", limit, t0).ok, "other ip has its own bucket");
-  assert(takeToken(store, "1.1.1.1\ncheck", limit, t0).ok, "other route has its own bucket");
-}
-
-// Stale keys are dropped, and the store stays bounded.
-{
-  const store = new Map();
-  const staleMs = 1000;
-  assert(takeToken(store, "old", { capacity: 1, refillPerSec: 0.01 }, 0, 10, staleMs).ok, "first token");
-  assert(!takeToken(store, "old", { capacity: 1, refillPerSec: 0.01 }, 10, 10, staleMs).ok, "fresh empty bucket stays empty");
-  // The deny above touches the bucket, so it goes stale only after another full window.
-  assert(takeToken(store, "old", { capacity: 1, refillPerSec: 0.01 }, 10 + staleMs + 1, 10, staleMs).ok, "stale key is evicted and starts full");
-
-  const bounded = new Map();
-  for (let i = 0; i < 6; i++) takeToken(bounded, `k${i}`, { capacity: 1, refillPerSec: 1 }, t0 + i, 3);
-  assert(bounded.size <= 3, `store size ${bounded.size} stayed <= 3`);
-  // k0 was the oldest and was evicted, so it is a new full bucket (a survivor would still be empty: 0.1s is not a token).
-  assert(takeToken(bounded, "k0", { capacity: 1, refillPerSec: 1 }, t0 + 100, 3).ok, "evicted key can burst again");
-}
-
-resetLimitsForTests();
-resetSpendForTests();
-delete process.env.DAILY_CLAUDE_CALL_LIMIT;
-
-const search = guard("search", async () => Response.json({ ok: true }));
-function searchReq(ip) {
-  return new Request("http://localhost/api/search?q=a", { headers: { "x-forwarded-for": `${ip}, 10.0.0.1` } });
-}
-
-let saw429 = false;
-let retry = "";
-for (let i = 0; i < 40; i++) {
-  const res = await search(searchReq("9.9.9.9"));
-  if (res.status === 429) {
-    saw429 = true;
-    retry = res.headers.get("Retry-After") ?? "";
-    break;
-  }
-  assert(res.status === 200, `search before the cap was ${res.status}`);
-}
-assert(saw429, "40 fast requests produced a 429");
-assert(Number(retry) >= 1, `Retry-After was ${retry}`);
-
-// A different IP is not blocked by that burst.
-{
-  const res = await search(searchReq("8.8.8.8"));
-  assert(res.status === 200, `other ip status ${res.status}`);
-}
-
-// After the window, the limited IP can try again. Refill is 1 token/sec and Retry-After is the wait.
-{
-  const wait = Number(retry) * 1000 + 50;
-  const realNow = Date.now;
-  const start = realNow();
-  Date.now = () => start + wait;
-  try {
-    const res = await search(searchReq("9.9.9.9"));
-    assert(res.status === 200, `after the window status ${res.status}`);
-  } finally {
-    Date.now = realNow;
-  }
-}
-
-const tts = guard("tts", async (request) => {
-  const body = await request.json();
-  return Response.json({ heard: body.text });
-});
-function ttsReq(body, ip, extraHeaders) {
-  return new Request("http://localhost/api/tts", {
-    method: "POST",
-    body,
-    headers: { "content-type": "application/json", "x-forwarded-for": ip, ...extraHeaders },
-  });
-}
-
-{
-  const res = await tts(ttsReq("{", "3.3.3.3"));
-  assert(res.status === 400, `bad json ${res.status}`);
-  const payload = await res.json();
-  assert(payload.error === "Body must be JSON.", `bad json body ${payload.error}`);
-}
-
-{
-  const res = await tts(ttsReq("   ", "3.3.3.4"));
-  assert(res.status === 400, `blank body ${res.status}`);
-}
-
-{
-  const big = `{"text":"${"a".repeat(70 * 1024)}"}`;
-  const res = await tts(ttsReq(big, "3.3.3.5"));
-  assert(res.status === 413, `oversize body ${res.status}`);
-}
-
-{
-  const res = await tts(ttsReq('{"text":"hi"}', "3.3.3.6", { "content-length": String(9 * 1024 * 1024) }));
-  assert(res.status === 413, `declared content-length ${res.status}`);
-}
-
-{
-  const res = await tts(ttsReq('{"text":"hi"}', "3.3.3.7"));
-  assert(res.status === 200, `small tts reached the handler (${res.status})`);
-  const payload = await res.json();
-  assert(payload.heard === "hi", "handler saw the parsed text");
-}
-
-// Daily ceiling: well-formed Claude-route requests, off by default, 429 once exceeded.
-{
-  let calls = 0;
-  const check = guard("check", async () => {
-    calls++;
-    return Response.json({ ok: true });
-  });
-  const body = JSON.stringify({ frame: "data:image/jpeg;base64," + "A".repeat(40) });
-  const once = (ip) =>
-    new Request("http://localhost/api/check", {
-      method: "POST",
-      body,
-      headers: { "content-type": "application/json", "x-forwarded-for": ip },
-    });
-  process.env.DAILY_CLAUDE_CALL_LIMIT = "1";
-  resetSpendForTests();
-  const first = await check(once("4.4.4.1"));
-  const second = await check(once("4.4.4.2"));
-  assert(first.status === 200 && calls === 1, `first claude request ${first.status} calls=${calls}`);
-  assert(second.status === 429 && calls === 1, `ceiling blocked the handler (${second.status}, calls=${calls})`);
-  assert(second.headers.get("Retry-After"), "ceiling sets Retry-After");
-  const msg = await second.json();
-  assert(!JSON.stringify(msg).includes("sk-"), "ceiling error has no key");
-  delete process.env.DAILY_CLAUDE_CALL_LIMIT;
-  resetSpendForTests();
-}
-
-// Host allowlist.
-assert(isAllowedManualUrl("https://www.lego.com/cdn/product-assets/product.bi.core.pdf/1.pdf"), "lego pdf");
-assert(isAllowedManualUrl("https://www.ikea.com/us/en/assembly_instructions/x.pdf"), "ikea pdf");
-assert(!isAllowedManualUrl("https://evil.com/x.pdf"), "reject other host");
-assert(!isAllowedManualUrl("https://www.lego.com.evil.com/x.pdf"), "reject lookalike host");
-assert(!isAllowedManualUrl("https://user:pass@www.lego.com/x.pdf"), "reject userinfo");
-assert(!isAllowedManualUrl("http://www.lego.com/x.pdf"), "reject http");
-assert(!isAllowedManualUrl("https://www.ikea.com.evil.com/x.pdf"), "reject ikea lookalike");
-assert(!isAllowedManualUrl("not a url"), "reject junk");
-assert(isIkeaSearchUrl("https://sik.search.blue.cdtapps.com/us/en/search-result-page?q=kallax"), "fixed ikea search host");
-assert(!isIkeaSearchUrl("https://sik.search.blue.cdtapps.com.evil.com/"), "search host is exact");
-assert(!isAllowedManualUrl("https://sik.search.blue.cdtapps.com/us/en/search-result-page"), "search host is not a manual host");
-
-assert(isSafeManualPdfPath("/manual-pdf/lego/6455750.pdf"), "lego path");
-assert(!isSafeManualPdfPath("/manual-pdf/lego/../../etc/passwd"), "lego traversal");
-assert(!isSafeManualPdfPath("/manual-pdf/lego/notes.txt"), "lego non-pdf");
-assert(!isSafeManualPdfPath("/manual-pdf/evil/1.pdf"), "unknown manual host path");
-const ikea = "/manual-pdf/ikea/us/en/assembly_instructions/kallax-shelf-unit-white__AA-2703433-1-100.pdf";
-assert(isSafeManualPdfPath(ikea), "ikea assembly pdf");
-assert(!isSafeManualPdfPath("/manual-pdf/ikea/us/en/p/kallax/"), "ikea html page");
-assert(!isSafeManualPdfPath("/manual-pdf/ikea/us/en/assembly_instructions/../../secret.pdf"), "ikea traversal");
-assert(
-  ikeaManualPath("https://www.ikea.com/us/en/assembly_instructions/kallax-shelf-unit-white__AA-2703433-1-100.pdf") === ikea,
-  "ikea url becomes a safe path",
-);
-assert(ikeaManualPath("https://evil.com/us/en/assembly_instructions/x.pdf") === null, "other host pdf rejected");
-
-if (failed) {
-  console.error(`${failed} failed`);
-  process.exit(1);
-}
-console.log("api guard tests passed");
+console.log('API guard: rate/refill/isolation/eviction, streaming limits, JSON/types, safe errors, redirects and all route wrappers passed.');

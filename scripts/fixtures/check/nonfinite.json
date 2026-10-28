@@ -1,0 +1,10 @@
+{
+  "name": "nonfinite",
+  "provenance": "hand-authored model-output regression fixture; not a real-photo observation",
+  "raw": "{\"step_complete\":true,\"confidence\":1e999}",
+  "expected": {
+    "verdict": "invalid",
+    "pass": false,
+    "locations": []
+  }
+}

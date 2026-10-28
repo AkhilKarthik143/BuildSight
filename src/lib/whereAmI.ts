@@ -11,7 +11,7 @@
 // Tiles are numbered 1, 2, 3... in book order (that's what the grid labels show and what Claude answers
 // with); each tile remembers its page and printed step number, since sub-builds restart at step 1.
 
-import { encodeCanvas } from "@/lib/encode";
+import { encodeCanvas } from "./encode.ts";
 import type { Tile, WhereAmIResult } from "./whereAmIDecide.ts";
 
 export type { Placement, Tile } from "./whereAmIDecide.ts";
@@ -103,4 +103,4 @@ export async function whereAmI(opts: { frame: string; tiles: Tile[]; complete: b
 // ── 4. Watching for changes (for automatic detection) ───────────────────────
 
 /** Share of pixels that changed between two small grayscale samples (shared with Auto Mode). */
-export { changed } from "@/lib/autoCheck";
+export { changed } from "./autoCheck.ts";

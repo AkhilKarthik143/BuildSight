@@ -1,13 +1,11 @@
+import { withApiGuard } from "@/lib/apiGuard";
 // Step check: compares the camera frame to the manual's picture for this step
 // (and the previous step), and says whether the step is done and what's wrong.
 
-import { guard } from "@/lib/apiGuard";
-import { asImage, asStringList, asText } from "@/lib/apiInput";
-import { parseCheckResult, type CheckResult } from "@/lib/checkParse";
 import { askClaude, ClaudeError, type Part } from "@/lib/claude";
+import { parseCheckResult as parseResult } from "@/lib/checkResult";
+export type { CheckResult } from "@/lib/checkResult";
 import { LOOKALIKE_RULE, partsPrompt, readPartLines, type PartLine } from "@/lib/parts";
-
-export type { CheckResult };
 
 const MAX_IMAGE_CHARS = 4_000_000;
 
@@ -50,21 +48,17 @@ Reply with JSON only, no other text:
   aren't sure where it is, or the piece is hidden or out of frame. Never guess a box.`;
 
 function isImage(s: unknown): s is string {
-  return asImage(s, MAX_IMAGE_CHARS) !== null;
+  return typeof s === "string" && s.startsWith("data:image/") && s.length <= MAX_IMAGE_CHARS;
 }
 
-async function post(request: Request) {
+async function handlePOST(request: Request) {
   let body: CheckRequest;
   try {
     body = await request.json();
   } catch {
     return Response.json({ error: "Body must be JSON." }, { status: 400 });
   }
-  const frame = body.frame;
-  const expected = body.expected;
-  const previous = body.previous;
-  const instruction = asText(body.instruction, 500);
-  const watchFor = asStringList(body.watchFor, 8, 200);
+  const { frame, expected, previous, instruction, watchFor } = body;
   const stepParts = readPartLines(body.parts);
   if (!isImage(frame) || !isImage(expected) || (previous !== undefined && !isImage(previous))) {
     return Response.json({ error: "Send `frame` and `expected` (and optionally `previous`) as image data URLs." }, { status: 400 });
@@ -90,7 +84,7 @@ async function post(request: Request) {
   const started = Date.now();
   try {
     const text = await askClaude({ system: SYSTEM_PROMPT, parts });
-    const result = parseCheckResult(text);
+    const result = parseResult(text);
     if (!result) return Response.json({ error: "Model reply wasn't valid JSON." }, { status: 502 });
     return Response.json({ ...result, latencyMs: Date.now() - started });
   } catch (e) {
@@ -99,4 +93,4 @@ async function post(request: Request) {
   }
 }
 
-export const POST = guard("check", post);
+export const POST = withApiGuard("check", handlePOST);
