@@ -69,10 +69,11 @@ async function searchIkea(q: string): Promise<ManualResult[]> {
 
 async function handleGET(request: Request) {
   const q = new URL(request.url).searchParams.get("q")?.trim() ?? "";
-  if (q.length < 2 || q.length > 80) return Response.json({ results: [] });
 
   // Queries are names/numbers, never arbitrary fetch URLs.
   if (/^(?:[a-z][a-z0-9+.-]*:|\/\/)/i.test(q) && !allowedManualUrl(q)) return Response.json({ error: "Only LEGO and IKEA URLs are allowed." }, { status: 400 });
+
+  if (q.length < 2 || q.length > 80) return Response.json({ results: [] });
 
   // A bare 4–7 digit number is a LEGO set; anything else searches IKEA.
   const isSetNumber = /^\d{4,7}(-\d)?$/.test(q);

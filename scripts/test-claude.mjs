@@ -27,6 +27,10 @@ reply=()=>new Response('offline-openrouter-placeholder SECRET upstream',{status:
 await assert.rejects(()=>askClaude(ask),e=>e.status===502 && !/placeholder|SECRET/.test(e.message));
 reply=()=>{throw new Error('SECRET transport headers');};
 await assert.rejects(()=>askClaude(ask),e=>e instanceof ClaudeError && !/SECRET/.test(e.message));
+reply=()=>new Response('SECRET malformed upstream reply');
+await assert.rejects(()=>askClaude(ask),e=>e instanceof ClaudeError && !/SECRET/.test(e.message));
+reply=()=>Response.json({choices:[{message:{content:{unexpected:true}}}]});
+await assert.rejects(()=>askClaude(ask),e=>e instanceof ClaudeError);
 process.env.ANTHROPIC_API_KEY='offline-anthropic-placeholder';
 const msg={id:'msg_test',type:'message',role:'assistant',model:'mock',content:[{type:'text',text:'anthropic answer'}],stop_reason:'end_turn',stop_sequence:null,usage:{input_tokens:1,output_tokens:1}};
 reply=()=>Response.json(msg);

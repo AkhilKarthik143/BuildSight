@@ -90,8 +90,10 @@ async function viaOpenRouter({ system, parts }: Ask): Promise<string> {
     }),
   }).catch(() => { throw new ClaudeError("Couldn't reach OpenRouter."); });
   if (!res.ok) throw new ClaudeError(`OpenRouter request failed (${res.status}).`);
-  const data = await res.json();
-  return data?.choices?.[0]?.message?.content ?? "";
+  const data = await res.json().catch(() => { throw new ClaudeError("OpenRouter returned an unreadable reply."); });
+  const content = data?.choices?.[0]?.message?.content;
+  if (typeof content !== "string") throw new ClaudeError("OpenRouter returned an unreadable reply.");
+  return content;
 }
 
 /** Sends one request to Claude and returns its text reply. */

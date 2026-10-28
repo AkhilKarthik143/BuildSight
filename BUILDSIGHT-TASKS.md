@@ -57,18 +57,18 @@ Four workstreams: (1) CI + docs, (2) API hardening (unauthenticated, spend-beari
 - [x] `scripts/eval-check.mjs`: offline eval of the pass/fail pipeline using recorded model outputs in `scripts/fixtures/check/*.json` (write 12+ cases: pass, issues, can_see false, low confidence, malformed JSON, refusal text) through `isPass()` / `checkVerdict()` / issue-box location logic; print a confusion table; exit non-zero on any mismatch; add `test:eval` script and include in `npm test`
 
 ### Validation
-- [ ] Run `npm run lint` and fix any issues
-- [ ] Run `npm run typecheck` and ensure zero errors
-- [ ] Run `npm test` and ensure all suites pass (original 6 + new ones)
-- [ ] Run `npm run build` and ensure it succeeds
-- [ ] Start `npm run dev` in background; `curl -s -o /dev/null -w "%{http_code}"` against `/` (expect 200) and `/practice/parrot` (expect 200); hit one API route 40 times fast and confirm 429s appear, then a valid small request succeeds after the window; kill dev server
-- [ ] Confirm no new network calls in tests (`grep -rn "api.anthropic.com\|openrouter.ai\|cartesia" scripts/test-*.mjs scripts/eval-check.mjs` shows only mocked references)
-- [ ] `git diff main --stat`: confirm none of the do-not-touch paths changed
+- [x] Run `npm run lint` and fix any issues
+- [x] Run `npm run typecheck` and ensure zero errors
+- [x] Run `npm test` and ensure all suites pass (original 6 + new ones)
+- [x] Run `npm run build` and ensure it succeeds
+- [x] Start `npm run dev` in background; `curl -s -o /dev/null -w "%{http_code}"` against `/` (expect 200) and `/practice/parrot` (expect 200); hit one API route 40 times fast and confirm 429s appear, then a valid small request succeeds after the window; kill dev server
+- [x] Confirm no new network calls in tests (`grep -rn "api.anthropic.com\|openrouter.ai\|cartesia" scripts/test-*.mjs scripts/eval-check.mjs` shows only mocked references)
+- [x] `git diff main --stat`: confirm none of the do-not-touch paths changed
 
 ### Cleanup
-- [ ] Remove debug logging and scratch files; no `console.log` added to `src/`
-- [ ] Add a "Hardening pass" section to `DECISIONS.md` (decision, why, date) for: rate limiting, input caps, host allowlist, CI, BuildView split, eval harness
-- [ ] Final validation: `npm run lint && npm run typecheck && npm test && npm run build`
+- [x] Remove debug logging and scratch files; no `console.log` added to `src/`
+- [x] Add a "Hardening pass" section to `DECISIONS.md` (decision, why, date) for: rate limiting, input caps, host allowlist, CI, BuildView split, eval harness
+- [x] Final validation: `npm run lint && npm run typecheck && npm test && npm run build`
 
 ## Definition of Done
 - `.github/workflows/ci.yml` exists and runs lint, typecheck, test, build; the same four commands pass locally
@@ -134,3 +134,10 @@ Untested lib modules: claude, manuals, catalog, json, whereAmI, prebuilt, pdf, c
 - Extracted check and where-am-I parsers into pure lib modules shared by the real routes and tests; reject non-finite model confidence. Normal model output semantics and all tuning values stay unchanged.
 - Added tests for manual title/key/sort helpers, catalog filters/conversions/order, JSON fences/escaped braces/partial output and recognition parsing/decisions. Manual cleanup now matches literal IDs, preventing regex metacharacters from selecting another manual's cached readings.
 - The eval has 18 hand-authored, stored model-output fixtures (pass, uncertain, mistakes, occlusion, invalid boxes, malformed JSON and refusal). No real-photo recordings were supplied, so these explicitly measure parser/verdict regressions, not empirical vision accuracy. Each fixture declares its provenance.
+
+### Final local validation — 2026-10-28
+- Lint, typecheck, all original/new offline suites and production build passed, with provider keys explicitly empty for the final build. All18 eval fixtures match. HTTP smoke against a dev server returned200 for / and /practice/parrot,400 for malformed input on every POST route,413 for oversized input,429 on20 of40 rapid search requests, and200 after refill. Dev server stopped.
+- 390×844 production-browser regression passed: manual/camera, error highlighting, collapse, auto preferences, check advancement, keyboard/thumbnail navigation, stale-check rejection and practice page. The first dev-browser attempt was intercepted by Next's Cache disabled badge over the Check button (no application exception); production mode passed. Playwright is the only added dev dependency; runtime dependencies are unchanged.
+- Inspected diff against local main and verified protected files against the actual task base86b82da: no changes to manuals/catalog, Azure workflow/deploy instructions, preread/hires, or original six test scripts. Local main and ar-akhil hashes are unchanged. Local .agent-screenshots predate this task and are retained/ignored. New screenshots and intermediate logs live in /tmp. No secrets or .env.local are staged.
+- Advisory review: npm reports2 high entries from one underlying Azure MSAL advisory (GHSA-xcx6-jx8p-x3h5). Installed identity4.14.0 requires MSAL^6.0.0 while the fix is in7.1+; no forced major override. This known follow-up is documented in README/DECISIONS.
+- User's final direction: consolidate into AkhilKarthik143/BuildSight improve/full-project and update existing PR1. Its independent full-project work must be preserved during integration; do not push to either main branch or to the upstream repository.

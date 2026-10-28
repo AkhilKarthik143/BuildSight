@@ -58,6 +58,8 @@ PDF/catalog → browser PDF rendering → `/api/extract` → cached step records
 | `npm run dev` | Development server |
 | `npm run lint` | ESLint |
 | `npm run typecheck` | Generate Next route types, then TypeScript |
+| `npm run test:http` | Local-server validation/rate-limit smoke (port 3102) |
+| `npm run test:browser` | Mocked 390×844 browser regression smoke against a production server |
 | `npm run test:eval` | Offline verdict/issue-box regression table from 18 stored fixtures |
 | `npm test` | Offline tests (no real API keys or provider calls) |
 | `npm run build` | Production build; Google Fonts may require network at build time |
@@ -77,3 +79,9 @@ CI runs install, lint, typecheck, tests, and build on pushes and pull requests, 
 - No service keys are used by tests. Offline recorded-output evals measure parsing/decision behavior, not visual accuracy.
 
 [Credits and asset sources](CREDITS.md).
+
+### Integration checks
+
+After building, start `npm start -- --port 3102` with provider credentials unset for HTTP checks. In another terminal run `npm run test:http` and `npm run test:browser`. Install Chromium once with `npx playwright install chromium`, or set `CHROME_PATH` to an installed Chrome executable. `E2E_BASE_URL` can override the local URL. Browser tests mock paid endpoints and use a simulated camera; no real credentials or physical assembly are required. The browser test is separate from `npm test` because it needs a running server and browser installation. Use production mode to avoid the Next development badge covering mobile controls.
+
+Known dependency advisory: the existing Azure telemetry tree includes `@azure/msal-node@6.0.1`, reported by npm audit under GHSA-xcx6-jx8p-x3h5 (also attributed to `@azure/identity`). The fixed MSAL major is outside the installed identity package's supported range. This pass does not force a breaking override or change Azure deployment; update the telemetry dependency chain before treating this as a fully audited public release.
