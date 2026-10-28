@@ -20,7 +20,7 @@ Working notes for the production-readiness pass on `improve/full-project`. Newes
 - [x] rate limit, guard, validation, host allowlist, security headers, daily ceiling
 
 ### Phase 3: Split BuildView.tsx
-- [ ] extract into `src/components/build/`, BuildView under ~600 lines
+- [x] extract into `src/components/build/`, BuildView under ~600 lines
 
 ### Phase 4: Tests + offline eval
 - [ ] api guard, claude, pure libs, eval-check, wired into `npm test`
@@ -151,3 +151,10 @@ Open questions are the Microsoft booth, which physical sets, the 13-of-15 step-c
 - `DAILY_CLAUDE_CALL_LIMIT` (default off) counts well-formed requests to the six Claude routes per UTC day in this process. Over the cap: 429 + `Retry-After` until the next UTC midnight, and the handler is not called.
 - Claude errors no longer include `e.message` or the OpenRouter response body. Check, extract, and where-am-i no longer return a `raw` model snippet.
 - `scripts/test-api-guard.mjs` is `npm run test:guard` and part of `npm test`. It covers burst, refill, per-IP isolation, eviction, 413, 400, the ceiling, and the host allowlist. No network.
+
+### Phase 3
+
+- `BuildView.tsx` is 355 lines. It still owns manual load, page read, crop, locate, and holograms. Check flow, auto/stillness, voice commands, step jumps, and the JSX live in `src/components/build/useBuildControls.ts` and `BuildLayout.tsx`. Auto storage and the speed popover are `autoStore.ts` / `AutoControls.tsx`. Page reading helpers are `pageWork.ts`. `stepLabel` / `spokenStep` are `src/lib/stepText.ts`, covered by `npm run test:steps`.
+- **Assumption:** The six-hook plan in the split table collapsed into one controls hook plus a layout component. The closures share the same refs (`search`, `direction`, `watch`, and the rest). Splitting them further would pass those refs across hooks, which `react-hooks/immutability` rejects unless the local name ends in `Ref`. One hook keeps the original call order and the original dependency sets, plus the stable setters and refs the linter now requires. Adding those stable values does not change when the callbacks are recreated.
+- Props of `CameraFeed`, `VoicePanel`, `ManualPanel`, `ZoomViewer`, `PieceHologram`, and `CheckErrorOverlay` are unchanged. No new `any`. The existing Auto Mode `console.log` stayed.
+- `MAX_PARTS` (6) is one shared constant in `src/components/build/types.ts`, used by both the hologram effect and the step-card chips.
