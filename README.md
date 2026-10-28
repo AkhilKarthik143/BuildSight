@@ -74,6 +74,9 @@ Names only. Values stay in `.env.local` or the host's secret store. See `.env.ex
 | `npm run test:auto` | Auto Mode timing. |
 | `npm run test:practice` | Practice-mode measurements. |
 | `npm run test:eval` | Offline check-verdict fixtures. No network. |
+| `npm run test:pairing` | Pairing schema, in-memory transport, mocked Azure transport, QR matrix. |
+| `npm run test:summary` | Session summary Markdown and the "I'm done building" command. |
+| `npm run test:faults` | Camera, mic, offline, and rate-limit copy. |
 
 Suites run with `node --experimental-strip-types`. They mock any Claude, Cartesia, or Azure call. None of them touch the network.
 

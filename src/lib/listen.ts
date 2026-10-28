@@ -5,6 +5,7 @@
 // Push-to-talk: start() when the button goes down, stop() when it comes up; stop() resolves with what was said.
 
 import type * as SpeechSDK from "microsoft-cognitiveservices-speech-sdk";
+import { faultCopy } from "@/lib/faults";
 
 type Sdk = typeof SpeechSDK;
 
@@ -36,7 +37,10 @@ async function ensureMic() {
     s.getTracks().forEach((t) => t.stop());
   } catch (e) {
     const name = e instanceof DOMException ? e.name : "";
-    if (name === "NotAllowedError") throw new Error("Mic access is blocked. Allow the microphone in the browser's address bar, then try again.");
+    if (name === "NotAllowedError" || name === "PermissionDeniedError") {
+      const fault = faultCopy("mic-denied");
+      throw new Error(`${fault.title}. ${fault.detail}`);
+    }
     if (name === "NotFoundError") throw new Error("No microphone found.");
     throw new Error("Couldn't open the microphone.");
   }

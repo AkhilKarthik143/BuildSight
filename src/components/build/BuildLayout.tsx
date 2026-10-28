@@ -3,7 +3,7 @@
 
 import { AnimatePresence, motion } from "motion/react";
 import Link from "next/link";
-import type { RefObject } from "react";
+import { useState, type RefObject } from "react";
 import type { ExtractedStep } from "@/app/api/extract/route";
 import CheckErrorOverlay, { IssueBoxes, LiveIssueBoxes, WarnGlyph } from "@/components/CheckErrorOverlay";
 import CameraFeed, { type CameraHandle } from "@/components/CameraFeed";
@@ -19,6 +19,8 @@ import { stopSpeaking } from "@/lib/speech";
 import { stepLabel } from "@/lib/stepText";
 import type { Cutout } from "@/lib/cutout";
 import { AutoSpeedSettings, AutoToggle } from "./AutoControls";
+import { SummaryPanel } from "./SummaryPanel";
+import { PairPanel } from "@/components/pair/PairPanel";
 import type { PageSource } from "./pageWork";
 import { MAX_PARTS, type Check, type Phase } from "./types";
 import type { useBuildControls } from "./useBuildControls";
@@ -84,6 +86,9 @@ export type BuildLayoutProps = {
   setCheckState: (v: null) => void;
   preview: string | null;
   locating: boolean;
+  summaryOpen: boolean;
+  summaryMarkdown: string;
+  setSummaryOpen: (open: boolean) => void;
 };
 
 export function BuildLayout(p: BuildLayoutProps) {
@@ -93,8 +98,10 @@ export function BuildLayout(p: BuildLayoutProps) {
     pageImage, photoOpen, setPhotoFor, onCommand, onAction, notice, setNotice, pending, setAdvance, part, holoState,
     holoItems, stepKey, roomForResult, isPhone, setSheetOpen, sheetOpen, stripItems, thumbs, stepIdx, steps,
     centerCurrent, jumpToStep, activeSubs, setSubsteps, autoMode, autoSpeed, autoStatus, runCheck, setPhase, setAttempt,
-    setCheckState, preview, locating,
+    setCheckState, preview, locating, summaryOpen, summaryMarkdown, setSummaryOpen,
   } = p;
+
+  const [pairOpen, setPairOpen] = useState(false);
 
   return (
     <main className="relative h-dvh w-full overflow-hidden bg-ink text-white">
@@ -131,6 +138,22 @@ export function BuildLayout(p: BuildLayoutProps) {
           </Link>
         )}
         <button
+          type="button"
+          onClick={() => setPairOpen(true)}
+          aria-label="Pair a phone camera"
+          className="hud-panel h-9 rounded-xl px-2.5 text-xs font-semibold text-white/85 transition hover:text-white"
+        >
+          Pair
+        </button>
+        <button
+          type="button"
+          onClick={() => setSummaryOpen(true)}
+          aria-label="Show the build summary"
+          className="hud-panel h-9 rounded-xl px-2.5 text-xs font-semibold text-white/85 transition hover:text-white"
+        >
+          Summary
+        </button>
+        <button
           onClick={() => restart()}
           disabled={!doc}
           aria-label="Restart from step 1"
@@ -149,11 +172,20 @@ export function BuildLayout(p: BuildLayoutProps) {
           }}
           className="hud-panel h-9 rounded-xl px-3 text-xs font-medium text-white/85 transition hover:text-white"
           aria-pressed={muted}
+          aria-label={muted ? "Turn voice on" : "Turn voice off"}
         >
           {muted ? "Voice off" : "Voice on"}
         </button>
         </div>
       </header>
+      <p className="sr-only" aria-live="polite">
+        {notice?.text}
+        {verdict === "pass" && " Step verified."}
+        {verdict === "fix" && check?.state === "result" && ` Needs a fix. ${check.result.say}`}
+        {verdict === "notyet" && " Not done yet."}
+        {verdict === "unsure" && " Need a clearer look."}
+        {check?.state === "error" && ` ${check.message}`}
+      </p>
 
       {/* reticle: shows while a check is running */}
       <AnimatePresence>
@@ -649,8 +681,10 @@ export function BuildLayout(p: BuildLayoutProps) {
                     Phones hide it during a mistake review: "Check again" does the same and the photo needs the room. */}
                 <div className={`${isPhone && verdict === "fix" ? "hidden" : "flex"} mt-3 gap-2`}>
                 <button
+                  type="button"
                   onClick={() => runCheck()}
                   disabled={check?.state === "checking"}
+                  aria-label="Check build"
                   className="min-w-0 flex-1 rounded-xl py-2.5 text-sm bg-holo font-semibold text-ink transition hover:brightness-110 active:scale-[0.98] disabled:opacity-60"
                 >
                   {check?.state === "checking" ? "Checking…" : "Check build"}
@@ -663,6 +697,8 @@ export function BuildLayout(p: BuildLayoutProps) {
           </motion.section>
         </AnimatePresence>
       </div>
+      {pairOpen && <PairPanel onClose={() => setPairOpen(false)} />}
+      {summaryOpen && <SummaryPanel markdown={summaryMarkdown} onClose={() => setSummaryOpen(false)} />}
     </main>
   );
 }

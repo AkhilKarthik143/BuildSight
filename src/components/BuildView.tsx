@@ -12,14 +12,15 @@ import { HOLO_FULL_SIZE, LOOKAHEAD, crop, makeSource, pageReader, withGrid, type
 import { MAX_PARTS, type Advance, type Check, type Phase } from "@/components/build/types";
 import { useBuildControls } from "@/components/build/useBuildControls";
 import { useIsPhone } from "@/components/build/usePhone";
-import { forStep, checkVerdict } from "@/lib/issueBox";
+import { boxLocation, forStep, checkVerdict } from "@/lib/issueBox";
+import { emptySession, formatSessionMarkdown, noteMistake, noteStep, type SessionState } from "@/lib/sessionSummary";
 import { describePart, partLines } from "@/lib/parts";
 import { cutOutPiece, type Cutout } from "@/lib/cutout";
 import { getManual, saveManual, type Manual } from "@/lib/manuals";
 import { openManualPdf } from "@/lib/pdf";
 import { loadPrebuilt } from "@/lib/prebuilt";
 import { speak, stopSpeaking } from "@/lib/speech";
-import { spokenStep } from "@/lib/stepText";
+import { spokenStep, stepLabel } from "@/lib/stepText";
 import { newWatch, timingFor, type AutoTiming } from "@/lib/autoCheck";
 
 export default function BuildView() {
@@ -282,12 +283,42 @@ export default function BuildView() {
   useEffect(() => stopSpeaking, []);
 
 
+  const [session, setSession] = useState<SessionState>(() => emptySession("Build"));
+  const [summaryOpen, setSummaryOpen] = useState(false);
+  const [trackedStep, setTrackedStep] = useState("");
+  const [trackedCheck, setTrackedCheck] = useState<number | null>(null);
+  const [seenPhase, setSeenPhase] = useState(phase.kind);
+  const title = manual?.title || "Build";
+  const stepChanged = Boolean(step) && trackedStep !== stepKey;
+  const checkChanged = check?.state === "result" && checkVerdict(check.result) === "fix" && trackedCheck !== check.id;
+  if (session.title !== title || stepChanged || checkChanged) {
+    if (stepChanged) setTrackedStep(stepKey);
+    if (checkChanged && check?.state === "result") setTrackedCheck(check.id);
+    setSession((s) => {
+      let next = s.title === title ? s : { ...s, title };
+      if (stepChanged && step) next = noteStep(next, stepKey, stepLabel(step));
+      if (checkChanged && check?.state === "result") {
+        next = check.result.issues.reduce(
+          (acc, issue) => noteMistake(acc, { part: issue.part, where: issue.box ? boxLocation(issue.box) : "", problem: issue.problem }),
+          next,
+        );
+      }
+      return next;
+    });
+  }
+  if (seenPhase !== phase.kind) {
+    setSeenPhase(phase.kind);
+    if (phase.kind === "done") setSummaryOpen(true);
+  }
+  const openSummary = useCallback(() => setSummaryOpen(true), [setSummaryOpen]);
+
   const controls = useBuildControls({
     camera, direction, landOn, landIdx, search, doc, page, setPage, setPageImage, steps, setSteps, stepIdx, setStepIdx,
     phase, setPhase, target, targetKey, previous, setCheckState, setIssuePick, checkSeq, advance, setAdvance, voiceDone,
     muted, isPhone, setSheetOpen, stepKey, setSubsteps, check, setCheck, photoOpen, setAttempt,
     setReadCount, locating, setLocating, notice, setNotice, lastAuto, lastManual, autoJump, firstAutoDone, baseline,
     autoMode, timing, timingRef, watch, setAutoStatus, currentKey, turnTo, step, reader, zoomOpen, readCount,
+    onSummary: openSummary,
   });
 
   return (
@@ -350,6 +381,9 @@ export default function BuildView() {
       setCheckState={setCheckState}
       preview={preview}
       locating={locating}
+      summaryOpen={summaryOpen}
+      summaryMarkdown={formatSessionMarkdown(session)}
+      setSummaryOpen={setSummaryOpen}
     />
   );
 }

@@ -26,7 +26,7 @@ Working notes for the production-readiness pass on `improve/full-project`. Newes
 - [x] api guard, claude, pure libs, eval-check, wired into `npm test`
 
 ### Phase 5: Product features
-- [ ] pairing, session summary, typed fallback, mic meter, PWA, a11y, error states
+- [x] pairing, session summary, typed fallback, mic meter, PWA, a11y, error states
 
 ### Phase 6: Observability and cost
 - [ ] route metrics, Claude usage log, README queries
@@ -166,3 +166,18 @@ Open questions are the Microsoft booth, which physical sets, the 13-of-15 step-c
 - Pure coverage: `firstJsonObject`, catalog `matches` / `metaLine` / `toResult` / `categoriesOf` / `mixed` (moved to `catalogQuery.ts` so the test does not load `catalog.json` through `@/`), `decide` (moved to `whereAmIDecide.ts`), and `uploadTitle`.
 - `parseCheckResult` is the check route's parser, now shared with `scripts/eval-check.mjs`. Fifteen fixtures cover a pass, the 0.7 edge, issue boxes, a missing box, `can_see: false` (confidence capped, issues dropped), low confidence, not-yet, malformed JSON, refusal text, prose before JSON, and a fenced reply. The script prints a confusion table and exits non-zero on a mismatch.
 - `npm test` runs `test:pure`, `test:claude`, and `test:eval` after the earlier suites. No fixture or test opens a socket.
+
+### Phase 5
+
+- Pairing: `src/lib/pairing/transport.ts` (`createRoom`, `join`, `publish`, `subscribe`). `memoryTransport` is the default and is what `npm run dev` uses. `azureTransport` is selected only when `WEBPUBSUB_CONNECTION_STRING` parses as `Endpoint=https://…;AccessKey=…`. It POSTs to the Web PubSub REST send URL and then notifies listeners in this process. Tests inject `fetch`. Six-character codes skip `0`, `O`, `1`, and `I`. Laptop UI is `PairPanel` (code + SVG QR). Phone UI is `/pair/[code]`. Messages are `frame`, `step`, `check`, and `transcript`, validated by `parsePairMessage`. Routes: `POST /api/pair`, `GET /api/pair/events` (SSE), `POST /api/pair/publish`, all behind `guard`.
+- **Assumption:** The Azure transport is a same-process stub plus a REST send. It does not open a WebSocket to Azure. A second server instance would not see messages unless Azure fan-out is added later. Local dev does not need that.
+- **Assumption:** QR codes are byte mode, error correction M, versions 1–6, drawn as SVG. A URL that does not fit shows the link without a code instead of throwing.
+- Session summary: `src/lib/sessionSummary.ts`. "I'm done." and "finished" stay check commands. "I'm done building", "end the build", "session summary", and "that's everything" open the panel. Reaching the done phase opens it too. Download is a Markdown file. Covered by `scripts/test-summary.mjs`.
+- Typed fallback: the voice pill has a text box. A phrase goes through `onCommand` (the same `matchCommand` path as speech). Anything else goes through `ask`.
+- Mic meter: `AnalyserNode` on a short-lived mic stream, only while `live` and `status === "listening"`. Mute and the think/speak pause set the level to zero and stop that stream. It is not connected to the speakers, so it does not feed the mic back into the room. The mute toggle and the existing pause-while-speaking path are unchanged.
+- **Assumption:** The meter opens its own `getUserMedia` stream beside Azure Speech. Stopping the meter stops only that stream.
+- PWA: `src/app/manifest.ts`, `public/icons/icon-192.png`, `public/icons/icon-512.png`, `public/sw.js`. The worker caches `/`, `/practice/parrot`, `/practice/pc`, and `/steps/**`. It returns immediately for `/api/*` and for other origins. `RegisterSw` registers it from the root layout.
+- Accessibility: global `:focus-visible` ring, `aria-label` / `aria-pressed` on the mic and the new Pair and Summary buttons, `aria-live` for check results, voice status, and pairing status. `useReducedMotion` stops the hologram scan, float, and spin. `prefers-reduced-motion` also disables the CSS scan, spin, blink, and pulse animations.
+- Errors: `src/lib/faults.ts` is the copy for camera denied, mic denied, offline, and rate limited. Camera denial is spoken from `CameraFeed`. Mic denial is the message `listen.ts` throws, and `VoicePanel` speaks the fault line. Offline uses the `offline` event and failed fetches. A 429 from check uses the same copy in `useBuildControls`. `scripts/test-faults.mjs` covers the copy and the message mapping.
+- New suites in `npm test`: `test:pairing`, `test:summary`, `test:faults`. No new runtime dependencies. No network.
+- `BuildView.tsx` is 389 lines after the summary wiring. `npm run lint` is clean and `npm test` passes, including the six original suites.

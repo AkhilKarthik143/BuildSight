@@ -5,6 +5,7 @@ export type Command =
   | { kind: "next" | "back" | "repeat" | "check" | "stop" | "locate" }
   | { kind: "goto"; step: number }
   | { kind: "auto"; on: boolean }
+  | { kind: "summary" }
   | { kind: "speed"; to: "faster" | "slower" | "fast" | "normal" | "careful" }; // Auto Mode speed
 
 const ONES: Record<string, number> = {
@@ -81,9 +82,13 @@ const SPEED_SET = [
 ];
 
 /** The command a whole spoken phrase asks for, or null if it's something else (send it to Claude). */
+// Longer than "I'm done." / "finished", which stay check commands.
+const SUMMARY = /^(?:im done building|i am done building|im done with the build|i am done with the build|end the build|session summary|show the summary|show summary|thats everything|that is everything)$/;
+
 export function matchCommand(text: string): Command | null {
   const t = normalize(text);
   if (!t) return null;
+  if (SUMMARY.test(t)) return { kind: "summary" };
   for (const [kind, re] of FIXED) if (re.test(t)) return { kind } as Command;
   if (AUTO_ON.test(t)) return { kind: "auto", on: true };
   if (AUTO_OFF.test(t)) return { kind: "auto", on: false };

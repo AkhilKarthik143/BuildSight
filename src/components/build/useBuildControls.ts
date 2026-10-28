@@ -9,6 +9,7 @@ import { checkVerdict, isPass, spokenIssues } from "@/lib/issueBox";
 import { matchCommand } from "@/lib/commands";
 import { partLines } from "@/lib/parts";
 import { speak, speaker, stopSpeaking } from "@/lib/speech";
+import { faultCopy } from "@/lib/faults";
 import { spokenStep } from "@/lib/stepText";
 import { AUTO_MIN_CONFIDENCE, MAX_TILES, changed, decide, whereAmI, type Tile } from "@/lib/whereAmI";
 import type { CameraHandle } from "@/components/CameraFeed";
@@ -74,6 +75,7 @@ export type BuildControlInput = {
   reader: ReturnType<typeof pageReader> | null;
   zoomOpen: boolean;
   readCount: number;
+  onSummary?: () => void;
 };
 
 export function useBuildControls(input: BuildControlInput) {
@@ -83,6 +85,7 @@ export function useBuildControls(input: BuildControlInput) {
     muted, isPhone, setSheetOpen, stepKey, setSubsteps, check, setCheck, photoOpen, setAttempt,
     setReadCount, locating, setLocating, notice, setNotice, lastAuto: lastAutoRef, lastManual: lastManualRef, autoJump: autoJumpRef, firstAutoDone: firstAutoDoneRef, baseline: baselineRef,
     autoMode, timing, timingRef, watch: watchRef, setAutoStatus, currentKey: currentKeyRef, turnTo, step, reader, zoomOpen, readCount,
+    onSummary,
   } = input;
 
   // Back to step 1: page 1 forward, skipping cover/intro pages as usual.
@@ -145,6 +148,14 @@ export function useBuildControls(input: BuildControlInput) {
       });
       const data = await res.json();
       if (seq !== checkSeqRef.current) return null; // the step changed or a newer check started
+      if (res.status === 429) {
+        const fault = faultCopy("rate-limited");
+        if (!automatic) {
+          setCheck({ state: "error", message: `${fault.title}. ${fault.detail}` });
+          if (!muted) speak(fault.say);
+        } else setCheckState(null);
+        return null;
+      }
       if (!res.ok) throw new Error(data.error);
       const result = data as CheckResult;
       const verdict = checkVerdict(result);
@@ -580,6 +591,10 @@ export function useBuildControls(input: BuildControlInput) {
         if (!muted) speak(`Auto speed ${name.toLowerCase()}.`);
         return `Auto speed: ${name}. ${describeTiming(timingFor(next))}.`;
       }
+      if (c.kind === "summary") {
+        onSummary?.();
+        return "Here's your build summary.";
+      }
       if (phase.kind === "loading") return "One moment, still loading.";
       switch (c.kind) {
         case "next":
@@ -603,7 +618,7 @@ export function useBuildControls(input: BuildControlInput) {
           return "Finding your place…";
       }
     },
-    [phase.kind, go, step, speakStep, runCheck, goToStep, findMyPlace, pending, muted, setAdvance],
+    [phase.kind, go, step, speakStep, runCheck, goToStep, findMyPlace, pending, muted, setAdvance, onSummary],
   );
 
   useEffect(() => {

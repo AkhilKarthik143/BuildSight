@@ -122,5 +122,5 @@ body {
 @keyframes issue-glow { 50% { box-shadow: 0 0 22px 5px rgba(239, 68, 68, 0.9), inset 0 0 10px rgba(239, 68, 68, 0.35); } }
 
 @media (prefers-reduced-motion: reduce) {
-  .spin-slow, .spin-rev, .spin-fast, .scan-bar::after, .blink, .hud-sweep, .issue-box { animation: none; }
+  .spin-slow, .spin-rev, .spin-fast, .scan-bar::after, .blink, .hud-sweep, .issue-box, .animate-pulse { animation: none; }
 }
