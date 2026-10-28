@@ -1,0 +1,8 @@
+{
+  "reply": "```json\n{\n  \"can_see\": true,\n  \"step_complete\": false,\n  \"confidence\": 0.77,\n  \"issues\": [\n    {\n      \"part\": \"wheel\",\n      \"problem\": \"upside down\",\n      \"fix\": \"Flip the wheel.\",\n      \"kind\": \"orientation\",\n      \"box\": {\n        \"left\": 70,\n        \"top\": 72,\n        \"right\": 90,\n        \"bottom\": 94\n      }\n    }\n  ],\n  \"say\": \"The wheel is upside down.\"\n}\n```",
+  "verdict": "fix",
+  "pass": false,
+  "locations": [
+    "bottom right"
+  ]
+}

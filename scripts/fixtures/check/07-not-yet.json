@@ -1,0 +1,6 @@
+{
+  "reply": "{\"can_see\":true,\"step_complete\":false,\"confidence\":0.9,\"issues\":[],\"say\":\"That step is not finished.\"}",
+  "verdict": "notyet",
+  "pass": false,
+  "locations": []
+}

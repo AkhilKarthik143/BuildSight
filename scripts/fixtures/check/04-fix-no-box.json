@@ -1,0 +1,7 @@
+{
+  "reply": "{\"can_see\":true,\"step_complete\":false,\"confidence\":0.8,\"issues\":[{\"part\":\"blue plate\",\"problem\":\"missing\",\"fix\":\"Add it.\",\"kind\":\"missing_part\"}],\"say\":\"A plate is missing.\"}",
+  "verdict": "fix",
+  "pass": false,
+  "locations": [],
+  "issues": 1
+}

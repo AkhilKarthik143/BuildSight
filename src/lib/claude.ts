@@ -12,8 +12,10 @@ type Ask = {
 };
 
 export class ClaudeError extends Error {
-  constructor(message: string, readonly status = 502) {
+  readonly status: number;
+  constructor(message: string, status = 502) {
     super(message);
+    this.status = status;
   }
 }
 
@@ -24,6 +26,34 @@ const MAX_TOKENS = 16000;
 
 type ImageType = "image/jpeg" | "image/png" | "image/gif" | "image/webp";
 const IMAGE_TYPES = new Set<string>(["image/jpeg", "image/png", "image/gif", "image/webp"]);
+
+// Upstream messages sometimes echo the request, including the key. Never forward them.
+function safeStatus(status: number | undefined): number {
+  return typeof status === "number" && status >= 400 && status <= 599 ? status : 502;
+}
+
+export type ClaudeUsageLog = {
+  event: "claude.usage";
+  model: string;
+  inputTokens: number | null;
+  outputTokens: number | null;
+};
+
+function tokenCount(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+/** One line per Claude call: model and token counts only. No prompt, image, or key. */
+export function logClaudeUsage(model: string, input: unknown, output: unknown): ClaudeUsageLog {
+  const line: ClaudeUsageLog = {
+    event: "claude.usage",
+    model,
+    inputTokens: tokenCount(input),
+    outputTokens: tokenCount(output),
+  };
+  console.info(JSON.stringify(line));
+  return line;
+}
 
 function splitDataUrl(dataUrl: string): { mediaType: ImageType; data: string } {
   const m = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
@@ -36,6 +66,11 @@ export function claudeConfigured() {
 }
 
 let client: Anthropic | null = null;
+
+/** Drops the cached SDK client. Tests use this so a new key is not stuck on the first client. */
+export function resetClaudeForTests() {
+  client = null;
+}
 
 async function viaAnthropic({ system, parts, effort = "low" }: Ask): Promise<string> {
   client ??= new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY!.trim() });
@@ -56,13 +91,14 @@ async function viaAnthropic({ system, parts, effort = "low" }: Ask): Promise<str
       system,
       messages: [{ role: "user", content }],
     });
+    logClaudeUsage(ANTHROPIC_MODEL, response.usage?.input_tokens, response.usage?.output_tokens);
     if (response.stop_reason === "refusal") throw new ClaudeError("Claude declined this request.", 422);
     return response.content.map((b) => (b.type === "text" ? b.text : "")).join("");
   } catch (e) {
     if (e instanceof ClaudeError) throw e;
     if (e instanceof Anthropic.AuthenticationError) throw new ClaudeError("Anthropic rejected the API key.", 500);
     if (e instanceof Anthropic.RateLimitError) throw new ClaudeError("Rate limited by Anthropic. Try again in a moment.", 429);
-    if (e instanceof Anthropic.APIError) throw new ClaudeError(`Anthropic error ${e.status}: ${e.message}`);
+    if (e instanceof Anthropic.APIError) throw new ClaudeError("Claude request failed.", safeStatus(e.status));
     throw new ClaudeError("Couldn't reach Anthropic.");
   }
 }
@@ -87,8 +123,9 @@ async function viaOpenRouter({ system, parts }: Ask): Promise<string> {
       ],
     }),
   });
-  if (!res.ok) throw new ClaudeError(`OpenRouter error ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  if (!res.ok) throw new ClaudeError("OpenRouter request failed.", res.status === 429 ? 429 : 502);
   const data = await res.json();
+  logClaudeUsage(OPENROUTER_MODEL, data?.usage?.prompt_tokens, data?.usage?.completion_tokens);
   return data?.choices?.[0]?.message?.content ?? "";
 }
 
@@ -145,11 +182,12 @@ export async function* streamClaude(system: string, turns: Turn[]): AsyncGenerat
       if (event.type === "content_block_delta" && event.delta.type === "text_delta") yield event.delta.text;
     }
     const final = await stream.finalMessage();
+    logClaudeUsage(ANTHROPIC_MODEL, final.usage?.input_tokens, final.usage?.output_tokens);
     if (final.stop_reason === "refusal") yield " Sorry, I can't help with that one.";
   } catch (e) {
     if (e instanceof Anthropic.AuthenticationError) throw new ClaudeError("Anthropic rejected the API key.", 500);
     if (e instanceof Anthropic.RateLimitError) throw new ClaudeError("Rate limited by Anthropic. Try again in a moment.", 429);
-    if (e instanceof Anthropic.APIError) throw new ClaudeError(`Anthropic error ${e.status}: ${e.message}`);
+    if (e instanceof Anthropic.APIError) throw new ClaudeError("Claude request failed.", safeStatus(e.status));
     throw new ClaudeError("Couldn't reach Anthropic.");
   }
 }

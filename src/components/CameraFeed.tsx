@@ -7,6 +7,8 @@
 // which capture() keeps (just scaled), so boxes in a captured photo can be mapped back onto the live video.
 
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { faultCopy } from "@/lib/faults";
+import { speaker } from "@/lib/speech";
 
 export type CameraHandle = {
   capture: () => string | null;
@@ -64,7 +66,14 @@ const CameraFeed = forwardRef<CameraHandle>(function CameraFeed(_, ref) {
         if (cancelled) return stream.getTracks().forEach((t) => t.stop());
         if (video.current) video.current.srcObject = stream;
       } catch (e) {
-        setError(e instanceof Error ? `Camera blocked: ${e.message}` : "Camera blocked.");
+        const denied = e instanceof DOMException && (e.name === "NotAllowedError" || e.name === "PermissionDeniedError");
+        if (denied) {
+          const fault = faultCopy("camera-denied");
+          setError(`${fault.title}. ${fault.detail}`);
+          speaker().say(fault.say);
+        } else {
+          setError(e instanceof Error ? `Camera blocked: ${e.message}` : "Camera blocked.");
+        }
       }
     }
     start();

@@ -1,0 +1,8 @@
+{
+  "reply": "{\"can_see\":false,\"step_complete\":true,\"confidence\":0.99,\"issues\":[{\"part\":\"red\",\"problem\":\"wrong\",\"fix\":\"Swap it.\",\"box\":{\"left\":10,\"top\":10,\"right\":30,\"bottom\":30}}],\"say\":\"Move the camera closer.\"}",
+  "verdict": "unsure",
+  "pass": false,
+  "locations": [],
+  "confidence": 0.3,
+  "issues": 0
+}

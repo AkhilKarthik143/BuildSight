@@ -29,6 +29,7 @@ Format: **Decision** — why. *(date, PT)*
 - **Demo setup: phone as overhead camera, laptop as the big screen,** paired with a room code or QR. *(Sat Oct 24, ~1:15 AM)*
 - **Stack:** Next.js 16 + React 19 + TypeScript + Tailwind on Vercel; three.js via react-three-fiber for 3D; Motion for animation. *(Sat Oct 24, ~1:30 AM)*
 - **Phone ↔ laptop real-time link: Azure Web PubSub** (Vercel functions can't hold a live socket; also keeps Microsoft in the build). *Not built yet.* *(Sat Oct 24, ~1:15 AM)*
+- **Pairing is in the product, with a local room when Azure is unset.** `npm run dev` uses an in-memory transport and SSE. `WEBPUBSUB_CONNECTION_STRING` selects a REST send to Azure Web PubSub and still delivers to listeners in that same process. Six-character codes, a QR on the laptop, and `/pair/[code]` on the phone. *(Tue Oct 27, 2026)*
 - **Speech to text: Azure AI Speech; voice out: Cartesia; telemetry: Azure Application Insights.** *Keys in; speech to text built (see Voice).* *(Sat Oct 24, ~1:15 AM)*
 
 ## AI
@@ -215,3 +216,14 @@ Practice a build hands-on through the phone: live rear camera behind a transpare
 ## One voice everywhere (Cartesia stays on when busy)
 Practice Mode sometimes spoke in the browser's built-in voice. Cartesia only accepts about three requests at once; quick replies (a correction, then "Nice, it clicks in" plus the next step) went over that, `/api/tts` returned 502, and the speaker took any failure before Cartesia had spoken once as "Cartesia isn't set up" and switched to the browser voice.
 - `src/lib/speech.ts`: a busy reply is retried with backoff (up to about 4.5 s) instead of falling back. The browser voice is used only when the server says Cartesia isn't set up (503), or Cartesia has failed three sentences in a row without ever working. Applies to the whole app, so every screen keeps the same voice.
+
+## Full-project pass
+
+- **CI is lint, typecheck, test, and build.** A pull request and a push both run those on Node 22 with the npm cache. `azure-image.yml` stays as it was. `npm run typecheck` is `next typegen && tsc --noEmit`, because plain `tsc` fails on `LayoutProps` until typegen. *(Tue Oct 27, 2026)*
+- **Every API route is behind one guard.** Over the limit returns 429 with `Retry-After`. An oversized body returns 413. Bad JSON returns 400. Search and the PDF proxy allow only `lego.com` and `ikea.com` hosts. `DAILY_CLAUDE_CALL_LIMIT` (unset or `0` means off) caps Claude routes per process per UTC day. Errors do not echo upstream bodies or keys. Limits live in memory on that instance. *(Tue Oct 27, 2026)*
+- **BuildView is a shell over `src/components/build/`.** The screen is 389 lines. Check flow, auto mode, voice commands, and the layout moved out without new props on the existing panels. The mic is still a mute toggle. There are still no Back/Next buttons. A step still passes only when `isPass()` is true: `can_see`, confidence at least 0.7, complete, and no issues. "I'm done." and "finished" are still check commands. *(Tue Oct 27, 2026)*
+- **The new tests stay offline.** Guard, Claude (mocked fetch), pure library helpers, 15 check fixtures, pairing, session summary, faults, and metrics are part of `npm test`. They do not open a socket. *(Tue Oct 27, 2026)*
+- **A finished build can be read back.** "I'm done building", "end the build", "session summary", and "that's everything" open a Markdown summary of steps, mistakes, and time. The same panel opens when the manual runs out of pages. A text box in the voice pill uses the same command path as a transcript. The mic meter runs only while the mic is listening, and it is not wired to the speakers. Camera denied, mic denied, offline, and rate limited each have a spoken line. *(Tue Oct 27, 2026)*
+- **The app can be installed.** The manifest, two icons, and a service worker cache the shell and `/steps/**`. `/api/*` is left uncached. Reduced motion stops the hologram scan and the CSS sweeps. *(Tue Oct 27, 2026)*
+- **Cost is visible when Insights is configured.** `buildsight.api.requests` and `buildsight.api.latency_ms` record only when `APPLICATIONINSIGHTS_CONNECTION_STRING` is set. Each successful Claude call logs model name and token counts. The model, effort, and `max_tokens` settings are unchanged. *(Tue Oct 27, 2026)*
+- **No new runtime dependency.** QR, the service worker, the rate limiter, and the pairing transport are in the repo. OpenTelemetry was already installed for Azure Monitor. *(Tue Oct 27, 2026)*

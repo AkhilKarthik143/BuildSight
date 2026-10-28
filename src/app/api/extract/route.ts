@@ -1,5 +1,7 @@
 // Reads one manual page image and returns the build steps on it.
 
+import { guard } from "@/lib/apiGuard";
+import { asImage } from "@/lib/apiInput";
 import { askClaude, ClaudeError } from "@/lib/claude";
 import { firstJsonObject } from "@/lib/json";
 
@@ -104,14 +106,15 @@ function parse(text: string): ExtractedStep[] | null {
   }
 }
 
-export async function POST(request: Request) {
+async function post(request: Request) {
   let page: unknown;
   try {
     page = (await request.json())?.page;
   } catch {
     return Response.json({ error: "Body must be JSON." }, { status: 400 });
   }
-  if (typeof page !== "string" || !page.startsWith("data:image/") || page.length > MAX_IMAGE_CHARS) {
+  const image = asImage(page, MAX_IMAGE_CHARS);
+  if (!image) {
     return Response.json({ error: "Send `page` as an image data URL." }, { status: 400 });
   }
 
@@ -123,7 +126,7 @@ export async function POST(request: Request) {
       lastRaw = await askClaude({
         system: SYSTEM_PROMPT,
         parts: [
-          { type: "image", dataUrl: page },
+          { type: "image", dataUrl: image },
           { type: "text", text: "Extract the steps on this page. JSON only." },
         ],
       });
@@ -135,5 +138,7 @@ export async function POST(request: Request) {
     const err = e instanceof ClaudeError ? e : new ClaudeError("Couldn't read that page.");
     return Response.json({ error: err.message }, { status: err.status });
   }
-  return Response.json({ error: "Couldn't read steps from that page.", raw: lastRaw.slice(0, 300) }, { status: 502 });
+  return Response.json({ error: "Couldn't read steps from that page." }, { status: 502 });
 }
+
+export const POST = guard("extract", post);

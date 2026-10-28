@@ -1,0 +1,6 @@
+{
+  "reply": "Looking at the photo now.\n{\"can_see\":true,\"step_complete\":true,\"confidence\":0.81,\"issues\":[],\"say\":\"Looks right.\"}",
+  "verdict": "pass",
+  "pass": true,
+  "locations": []
+}

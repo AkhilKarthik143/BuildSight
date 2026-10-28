@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AssistRequest } from "@/app/api/assist/route";
 import { readTranscript, type AssistAction } from "@/lib/assistReply";
+import { faultCopy, faultFromMessage } from "@/lib/faults";
 import { Listener } from "@/lib/listen";
 import { speaker } from "@/lib/speech";
 
@@ -49,6 +50,8 @@ export default function VoicePanel({ getFrame, context, muted, compact, onComman
   const [interim, setInterim] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [live, setLive] = useState(false); // mic unmuted
+  const [level, setLevel] = useState(0);
+  const [draft, setDraft] = useState("");
   // The latest answer shows below the pill while active and for a few seconds after.
   const [faded, setFaded] = useState(true);
   const [pinned, setPinned] = useState(false); // tap the status line to keep the full transcript open
@@ -84,7 +87,9 @@ export default function VoicePanel({ getFrame, context, muted, compact, onComman
         } else ask(text);
       },
       onError: (m) => {
-        setError(m);
+        const kind = faultFromMessage(m);
+        setError(kind ? `${faultCopy(kind).title}. ${faultCopy(kind).detail}` : m);
+        if (kind) speaker().say(faultCopy(kind).say);
         setStatus("idle");
         setInterim("");
       },
@@ -214,7 +219,14 @@ export default function VoicePanel({ getFrame, context, muted, compact, onComman
       if (ctrl.signal.aborted) return;
       voice?.end();
       setLines((ls) => (ls[ls.length - 1]?.who === "assistant" && !ls[ls.length - 1].text ? ls.slice(0, -1) : ls));
-      setError(e instanceof TypeError ? "Network problem. Check the connection and try again." : e instanceof Error ? e.message : "Something went wrong.");
+      const offline = e instanceof TypeError;
+      const message = offline ? `${faultCopy("offline").title}. ${faultCopy("offline").detail}` : e instanceof Error ? e.message : "Something went wrong.";
+      if (offline) speaker().say(faultCopy("offline").say);
+      else {
+        const kind = faultFromMessage(message);
+        if (kind) speaker().say(faultCopy(kind).say);
+      }
+      setError(message);
       setStatus("idle");
     }
   }
@@ -229,6 +241,92 @@ export default function VoicePanel({ getFrame, context, muted, compact, onComman
     return () => window.removeEventListener("keydown", onKey);
   }, [toggleMic]);
 
+  // Mic level, only while the mic is actually listening. Mute and the think/speak pause stop it.
+  useEffect(() => {
+    if (!live || status !== "listening") return;
+    let cancelled = false;
+    let ctx: AudioContext | null = null;
+    let stream: MediaStream | null = null;
+    let raf = 0;
+    (async () => {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        if (cancelled) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+        ctx = new AudioContext();
+        const source = ctx.createMediaStreamSource(stream);
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 256;
+        source.connect(analyser);
+        const data = new Uint8Array(analyser.fftSize);
+        const tick = () => {
+          analyser.getByteTimeDomainData(data);
+          let sum = 0;
+          for (const sample of data) {
+            const x = (sample - 128) / 128;
+            sum += x * x;
+          }
+          setLevel(Math.min(1, Math.sqrt(sum / data.length) * 4));
+          raf = requestAnimationFrame(tick);
+        };
+        tick();
+      } catch {
+        if (!cancelled) setLevel(0);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(raf);
+      stream?.getTracks().forEach((track) => track.stop());
+      ctx?.close();
+    };
+  }, [live, status]);
+
+  useEffect(() => {
+    const onOff = () => {
+      const fault = faultCopy("offline");
+      setError(`${fault.title}. ${fault.detail}`);
+      speaker().say(fault.say);
+    };
+    window.addEventListener("offline", onOff);
+    return () => window.removeEventListener("offline", onOff);
+  }, []);
+
+  function submitTyped(event: { preventDefault: () => void }) {
+    event.preventDefault();
+    const text = draft.trim();
+    if (!text) return;
+    setDraft("");
+    setError(null);
+    const handled = props.current.onCommand?.(text);
+    if (handled) {
+      setLines((ls) => [...ls, { who: "you", text }, { who: "assistant", text: handled }]);
+      setFaded(false);
+      setStatus(speaker().speaking ? "speaking" : "idle");
+    } else ask(text);
+  }
+
+  const typedForm = (
+    <form onSubmit={submitTyped} className="flex gap-1 border-t border-white/10 px-2 py-1.5">
+      <label htmlFor={compact ? "typed-command-compact" : "typed-command"} className="sr-only">
+        Type a command
+      </label>
+      <input
+        id={compact ? "typed-command-compact" : "typed-command"}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        placeholder="Type a command"
+        className="min-w-0 flex-1 rounded-lg bg-white/10 px-2 py-1 text-xs text-white placeholder:text-white/40"
+      />
+      <button type="submit" className="rounded-lg bg-white/15 px-2 py-1 text-xs font-semibold text-white">
+        Send
+      </button>
+    </form>
+  );
+
+  const meter = live && status === "listening" ? level : 0;
   const statusLine =
     status === "listening"
       ? interim || "Listening…"
@@ -256,12 +354,16 @@ export default function VoicePanel({ getFrame, context, muted, compact, onComman
         >
           <MicIcon off={!live} className="h-6 w-6" />
           <span className={`absolute right-1 top-1 h-2.5 w-2.5 rounded-full ${STATUS_DOT[status]}`} />
+          <span aria-hidden className="absolute inset-x-2 bottom-1 h-0.5 overflow-hidden rounded-full bg-white/20">
+            <span className="block h-full bg-rose-300" style={{ width: `${Math.round(meter * 100)}%` }} />
+          </span>
         </button>
         {(status !== "idle" || error) && (
-          <p className={`hud-panel line-clamp-2 rounded-xl px-2.5 py-1.5 text-xs ${error ? "text-red-100" : "text-white/80"}`}>
+          <p aria-live="polite" className={`hud-panel line-clamp-2 rounded-xl px-2.5 py-1.5 text-xs ${error ? "text-red-100" : "text-white/80"}`}>
             {error ?? (last || statusLine)}
           </p>
         )}
+        {typedForm}
       </div>
     );
   }
@@ -280,9 +382,13 @@ export default function VoicePanel({ getFrame, context, muted, compact, onComman
         >
           <MicIcon off={!live} className="h-[18px] w-[18px]" />
           <span className={`absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-ink ${STATUS_DOT[status]}`} />
+          <span aria-hidden className="absolute inset-x-1.5 bottom-0.5 h-0.5 overflow-hidden rounded-full bg-white/20">
+            <span className="block h-full bg-rose-300" style={{ width: `${Math.round(meter * 100)}%` }} />
+          </span>
         </button>
         <button
           onClick={() => setPinned((p) => !p)}
+          aria-live="polite"
           className={`min-w-0 flex-1 line-clamp-2 text-left text-[13px] leading-tight ${status === "listening" && interim ? "italic text-white/70" : "text-white/85"}`}
           title={pinned ? "Hide transcript" : "Show transcript"}
         >
@@ -306,6 +412,7 @@ export default function VoicePanel({ getFrame, context, muted, compact, onComman
           {error && <p className="rounded-lg border border-red-400/30 bg-red-400/10 px-2.5 py-1.5 text-xs text-red-100">{error}</p>}
         </div>
       )}
+      {typedForm}
     </section>
   );
 }

@@ -1,0 +1,6 @@
+{
+  "reply": "{\"can_see\":true,\"step_complete\":false,\"confidence\":0.4,\"issues\":[],\"say\":\"Not sure.\"}",
+  "verdict": "unsure",
+  "pass": false,
+  "locations": []
+}

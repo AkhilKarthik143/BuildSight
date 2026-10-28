@@ -3,6 +3,8 @@
 // Default: plain text. With `format: "json"`: one JSON object, transcript first, then an action the app carries out
 // ({"transcript", "action": none|next|prev|goto|add_substeps, "goto_step"?, "substeps"?}; see src/lib/assistReply.ts).
 
+import { guard } from "@/lib/apiGuard";
+import { asImage, asText } from "@/lib/apiInput";
 import { ClaudeError, streamClaude, type Turn } from "@/lib/claude";
 
 const MAX_IMAGE_CHARS = 4_000_000;
@@ -55,16 +57,46 @@ function context(req: AssistRequest): string {
   return lines.join("\n");
 }
 
-export async function POST(request: Request) {
+function readHistory(value: unknown): { role: "user" | "assistant"; text: string }[] {
+  if (!Array.isArray(value)) return [];
+  const out: { role: "user" | "assistant"; text: string }[] = [];
+  for (const turn of value) {
+    if (!turn || typeof turn !== "object") continue;
+    const role = (turn as { role?: unknown }).role;
+    const text = asText((turn as { text?: unknown }).text, 2000);
+    if ((role === "user" || role === "assistant") && text) out.push({ role, text });
+  }
+  return out.slice(-MAX_TURNS);
+}
+
+function readStep(value: AssistRequest["step"]): AssistRequest["step"] {
+  if (!value || typeof value !== "object") return undefined;
+  const number = typeof value.number === "number" && Number.isFinite(value.number) ? value.number : asText(value.number, 40);
+  const instruction = asText(value.instruction, 500);
+  if (number === "" || !instruction) return undefined;
+  return {
+    number,
+    instruction,
+    parts: Array.isArray(value.parts) ? value.parts.filter((p): p is string => typeof p === "string").slice(0, 24).map((p) => p.slice(0, 80)) : undefined,
+    watchFor: Array.isArray(value.watchFor) ? value.watchFor.filter((p): p is string => typeof p === "string").slice(0, 8).map((p) => p.slice(0, 200)) : undefined,
+    selectedPart: asText(value.selectedPart, 120) || undefined,
+  };
+}
+
+async function post(request: Request) {
   let body: AssistRequest;
   try {
     body = await request.json();
   } catch {
     return Response.json({ error: "Bad request." }, { status: 400 });
   }
-  const question = body.question?.trim();
+  const question = asText(body.question, 2000);
   if (!question) return Response.json({ error: "No question heard." }, { status: 400 });
-  const frame = body.frame && body.frame.length < MAX_IMAGE_CHARS ? body.frame : undefined;
+  if (body.frame !== undefined && body.frame !== "" && !asImage(body.frame, MAX_IMAGE_CHARS)) {
+    return Response.json({ error: "Send `frame` as a JPEG, PNG, GIF, or WebP data URL." }, { status: 400 });
+  }
+  const frame = asImage(body.frame, MAX_IMAGE_CHARS) ?? undefined;
+  body = { ...body, question, history: readHistory(body.history), manual: asText(body.manual, 200) || undefined, step: readStep(body.step), frame };
 
   const ctx = context(body);
   const json = body.format === "json";
@@ -115,3 +147,5 @@ export async function POST(request: Request) {
     headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store", "X-Accel-Buffering": "no" },
   });
 }
+
+export const POST = guard("assist", post);

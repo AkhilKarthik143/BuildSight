@@ -1,11 +1,18 @@
 // Trades the Azure Speech key for a short-lived token (valid 10 min), so the key never reaches the browser.
 // Tokens are reused for 9 minutes to skip a round trip on every push-to-talk.
 
+import { guard } from "@/lib/apiGuard";
+
 let cached: { token: string; region: string; expires: number } | null = null;
 
-export async function GET() {
+function safeRegion(value: string | undefined): string | null {
+  const region = value?.trim().toLowerCase() ?? "";
+  return /^[a-z0-9]+$/.test(region) ? region : null;
+}
+
+async function get() {
   const key = process.env.AZURE_SPEECH_KEY?.trim();
-  const region = process.env.AZURE_SPEECH_REGION?.trim();
+  const region = safeRegion(process.env.AZURE_SPEECH_REGION);
   if (!key || !region) {
     return Response.json({ error: "Speech isn't set up on the server (missing Azure Speech key or region)." }, { status: 503 });
   }
@@ -30,3 +37,5 @@ export async function GET() {
     return Response.json({ error: "Couldn't reach Azure Speech. Check the network." }, { status: 502 });
   }
 }
+
+export const GET = guard("speech-token", get);
