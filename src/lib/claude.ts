@@ -122,11 +122,13 @@ async function viaOpenRouter({ system, parts }: Ask): Promise<string> {
         },
       ],
     }),
-  });
+  }).catch(() => { throw new ClaudeError("Couldn't reach OpenRouter."); });
   if (!res.ok) throw new ClaudeError("OpenRouter request failed.", res.status === 429 ? 429 : 502);
-  const data = await res.json();
+  const data = await res.json().catch(() => { throw new ClaudeError("OpenRouter returned an unreadable reply."); });
   logClaudeUsage(OPENROUTER_MODEL, data?.usage?.prompt_tokens, data?.usage?.completion_tokens);
-  return data?.choices?.[0]?.message?.content ?? "";
+  const content = data?.choices?.[0]?.message?.content;
+  if (typeof content !== "string") throw new ClaudeError("OpenRouter returned an unreadable reply.");
+  return content;
 }
 
 /** Sends one request to Claude and returns its text reply. */

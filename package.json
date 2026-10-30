@@ -12,7 +12,7 @@
     "test:boxes": "node --experimental-strip-types --no-warnings scripts/test-boxes.mjs",
     "test:parts": "node --experimental-strip-types --no-warnings scripts/test-parts.mjs",
     "test:assist": "node --experimental-strip-types --no-warnings scripts/test-assist.mjs",
-    "test": "npm run test:boxes && npm run test:commands && npm run test:parts && npm run test:assist && npm run test:auto && npm run test:practice && npm run test:guard && npm run test:steps && npm run test:pure && npm run test:claude && npm run test:eval && npm run test:pairing && npm run test:summary && npm run test:faults && npm run test:metrics",
+    "test": "npm run test:boxes && npm run test:commands && npm run test:parts && npm run test:assist && npm run test:auto && npm run test:practice && npm run test:api-guard && npm run test:api-guard-features && npm run test:build-helpers && npm run test:steps && npm run test:pure && npm run test:claude && npm run test:claude-features && npm run test:library && npm run test:eval && npm run test:pairing && npm run test:summary && npm run test:faults && npm run test:metrics",
     "test:metrics": "node --experimental-strip-types --no-warnings scripts/test-metrics.mjs",
     "test:pairing": "node --experimental-strip-types --no-warnings scripts/test-pairing.mjs",
     "test:summary": "node --experimental-strip-types --no-warnings scripts/test-summary.mjs",
@@ -23,7 +23,14 @@
     "test:steps": "node --experimental-strip-types --no-warnings scripts/test-step-text.mjs",
     "test:guard": "node --experimental-strip-types --no-warnings scripts/test-api-guard.mjs",
     "test:auto": "node --experimental-strip-types --no-warnings scripts/test-auto.mjs",
-    "test:practice": "node --experimental-strip-types --no-warnings scripts/test-practice.mjs"
+    "test:practice": "node --experimental-strip-types --no-warnings scripts/test-practice.mjs",
+    "test:api-guard": "node --experimental-strip-types --no-warnings scripts/test-api-guard.mjs",
+    "test:build-helpers": "node --experimental-strip-types --no-warnings scripts/test-build-helpers.mjs",
+    "test:library": "node --experimental-strip-types --no-warnings scripts/test-library.mjs",
+    "test:http": "node scripts/test-http.mjs",
+    "test:browser": "node scripts/test-build-browser.mjs",
+    "test:api-guard-features": "node --experimental-strip-types --no-warnings scripts/test-api-guard-features.mjs",
+    "test:claude-features": "node --experimental-strip-types --no-warnings scripts/test-claude-features.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.3.0",
@@ -48,6 +55,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.4.3",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "playwright": "^1.64.1"
   }
 }

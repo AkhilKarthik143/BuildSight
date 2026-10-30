@@ -43,7 +43,7 @@ export function readPartLines(raw: unknown): PartLine[] {
   if (!Array.isArray(raw)) return [];
   return raw
     .slice(0, MAX_PARTS)
-    .map((p) => ({ description: clean((p as Record<string, unknown>)?.description), qty: Math.max(1, Math.round(Number((p as Record<string, unknown>)?.qty) || 1)) }))
+    .map((p) => ({ description: clean((p as Record<string, unknown>)?.description), qty: Math.min(999, Math.max(1, Math.round(Number((p as Record<string, unknown>)?.qty) || 1))) }))
     .filter((p) => p.description);
 }
 

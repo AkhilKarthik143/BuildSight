@@ -1,0 +1,10 @@
+{
+  "name": "below-pass",
+  "provenance": "hand-authored model-output regression fixture; not a real-photo observation",
+  "raw": "{\"can_see\": true, \"step_complete\": true, \"confidence\": 0.69, \"issues\": [], \"say\": \"Looks correct.\"}",
+  "expected": {
+    "verdict": "unsure",
+    "pass": false,
+    "locations": []
+  }
+}

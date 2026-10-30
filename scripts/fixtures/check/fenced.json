@@ -1,0 +1,10 @@
+{
+  "name": "fenced",
+  "provenance": "hand-authored model-output regression fixture; not a real-photo observation",
+  "raw": "```json\n{\"can_see\": true, \"step_complete\": true, \"confidence\": 0.95, \"issues\": [], \"say\": \"Looks correct.\"}\n```",
+  "expected": {
+    "verdict": "pass",
+    "pass": true,
+    "locations": []
+  }
+}

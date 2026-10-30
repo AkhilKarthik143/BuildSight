@@ -1,7 +1,6 @@
+import { withApiGuard } from "@/lib/apiGuard";
 // Answers a question about one camera frame. The key stays on the server.
 
-import { guard } from "@/lib/apiGuard";
-import { asImage, asText } from "@/lib/apiInput";
 import { askClaude, ClaudeError } from "@/lib/claude";
 
 const MAX_IMAGE_CHARS = 4_000_000; // ~3 MB of base64; frames are resized well below this
@@ -11,19 +10,19 @@ const SYSTEM_PROMPT =
   "through an overhead camera. Answer in at most two short sentences, as if spoken aloud. " +
   "Name pieces by color and size (for example 'red 2x4 brick'). If you can't see clearly, say so.";
 
-async function post(request: Request) {
-  let body: { image?: unknown; question?: unknown };
+async function handlePOST(request: Request) {
+  let body: { image?: string; question?: string };
   try {
     body = await request.json();
   } catch {
     return Response.json({ error: "Body must be JSON." }, { status: 400 });
   }
 
-  const image = asImage(body.image, MAX_IMAGE_CHARS);
-  const question = asText(body.question, 500);
-  if (!image) {
+  const { image, question } = body;
+  if (!image || !image.startsWith("data:image/")) {
     return Response.json({ error: "Send `image` as a data URL (data:image/jpeg;base64,...)." }, { status: 400 });
   }
+  if (image.length > MAX_IMAGE_CHARS) return Response.json({ error: "Image too large." }, { status: 413 });
 
   const started = Date.now();
   try {
@@ -31,7 +30,7 @@ async function post(request: Request) {
       system: SYSTEM_PROMPT,
       parts: [
         { type: "image", dataUrl: image },
-        { type: "text", text: question || "What do you see on the work surface?" },
+        { type: "text", text: question?.trim() || "What do you see on the work surface?" },
       ],
     });
     return Response.json({ text, latencyMs: Date.now() - started });
@@ -41,4 +40,4 @@ async function post(request: Request) {
   }
 }
 
-export const POST = guard("vision", post);
+export const POST = withApiGuard("vision", handlePOST);

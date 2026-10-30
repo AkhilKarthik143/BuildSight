@@ -1,45 +1,24 @@
-// Offline eval of recorded check replies. No network. Fixtures are local JSON.
-import { readdir, readFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { parseCheckResult } from "../src/lib/checkParse.ts";
-import { boxLocation, checkVerdict, isPass } from "../src/lib/issueBox.ts";
-
-const dir = join(dirname(fileURLToPath(import.meta.url)), "fixtures/check");
-const labels = ["pass", "fix", "notyet", "unsure", "unparsed"];
-
-const files = (await readdir(dir)).filter((name) => name.endsWith(".json")).sort();
-if (files.length < 12) {
-  console.error(`need 12 fixtures, found ${files.length}`);
-  process.exit(1);
+// Offline decision regression eval. Fixtures are synthetic recorded-format outputs, NOT accuracy measurements.
+import assert from 'node:assert/strict';
+import { readdirSync, readFileSync } from 'node:fs';
+import { parseCheckResult } from '../src/lib/checkResult.ts';
+import { isPass, checkVerdict, issueMarkers, boxLocation } from '../src/lib/issueBox.ts';
+globalThis.fetch=async()=>{throw new Error('Offline eval attempted network');};
+const dir=new URL('./fixtures/check/',import.meta.url);
+const labels=['pass','fix','notyet','unsure','invalid'];
+const table=Object.fromEntries(labels.map(label=>[label,Object.fromEntries(labels.map(p=>[p,0]))]));
+let failures=0,count=0;
+for(const file of readdirSync(dir).filter(f=>f.endsWith('.json')).sort()){
+ const fixture=JSON.parse(readFileSync(new URL(file,dir),'utf8'));count++;
+ const result=parseCheckResult(fixture.raw ?? fixture.reply);
+ const actual={verdict:result?checkVerdict(result):'invalid',pass:result?isPass(result):false,locations:result?issueMarkers(result.issues).map(m=>boxLocation(m.box)):[]};
+ const expected=fixture.expected ?? {verdict:fixture.verdict === 'unparsed' ? 'invalid' : fixture.verdict,pass:fixture.pass,locations:fixture.locations};
+ table[expected.verdict][actual.verdict]++;
+ try {assert.deepEqual(actual,expected,fixture.name ?? file);
+ if(fixture.confidence !== undefined) assert.equal(result?.confidence,fixture.confidence);
+ if(fixture.issues !== undefined) assert.equal(result?.issues.length,fixture.issues);}catch(e){failures++;console.error(e.message);}
 }
-
-const matrix = Object.fromEntries(labels.map((row) => [row, Object.fromEntries(labels.map((col) => [col, 0]))]));
-let failed = 0;
-
-for (const file of files) {
-  const fixture = JSON.parse(await readFile(join(dir, file), "utf8"));
-  const parsed = parseCheckResult(fixture.reply);
-  const gotVerdict = parsed ? checkVerdict(parsed) : "unparsed";
-  const gotPass = parsed ? isPass(parsed) : false;
-  const gotLocations = parsed ? parsed.issues.filter((issue) => issue.box).map((issue) => boxLocation(issue.box)) : [];
-  matrix[fixture.verdict][gotVerdict] += 1;
-  const sameLocations = JSON.stringify(gotLocations) === JSON.stringify(fixture.locations);
-  const sameConfidence = fixture.confidence === undefined || (parsed && parsed.confidence === fixture.confidence);
-  const sameIssues = fixture.issues === undefined || (parsed && parsed.issues.length === fixture.issues);
-  const ok = gotVerdict === fixture.verdict && gotPass === fixture.pass && sameLocations && sameConfidence && sameIssues;
-  if (!ok) failed++;
-  console.log(
-    `${ok ? "PASS" : "FAIL"}  ${file.padEnd(28)} verdict ${gotVerdict} pass ${gotPass} loc ${JSON.stringify(gotLocations)}` +
-      (ok ? "" : `  expected ${fixture.verdict} pass ${fixture.pass} loc ${JSON.stringify(fixture.locations)}`),
-  );
-}
-
-console.log("\nconfusion (rows expected, columns got)");
-console.log(["expected", ...labels].join("\t"));
-for (const row of labels) {
-  console.log([row, ...labels.map((col) => matrix[row][col])].join("\t"));
-}
-console.log(`\n${files.length - failed}/${files.length} fixtures matched`);
-if (failed) process.exit(1);
-console.log("eval-check passed");
+console.log('Expected rows → predicted columns (hand-authored offline fixtures):');
+console.table(table);
+console.log(`${count-failures}/${count} fixtures matched; this is not real-camera accuracy.`);
+if(count<12||failures)process.exitCode=1;

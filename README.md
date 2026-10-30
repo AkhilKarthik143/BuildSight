@@ -10,7 +10,7 @@ Cal Hacks 13.0. Decisions and the reasons behind the UX live in [DECISIONS.md](D
 2. The build screen shows the current step's picture, the parts as holograms, and a **Check build** button.
 3. The camera watches the table. In Auto Mode it checks when the scene changes and then holds still. A pass moves on; a mistake is boxed on the photo and spoken aloud.
 4. Talk with the mic (mute toggle, or the M key), or type the same phrase in the text box. "Next", "back", and "go to step 8" are instant. Other questions go to Claude with the current frame.
-5. Pair a phone to the laptop with a room code or QR so the phone is the overhead camera and the laptop is the screen.
+5. Open Pair to preview a phone camera through a room code or QR. The pairing preview is experimental; Check build still uses the local camera.
 
 ## Architecture
 
@@ -24,11 +24,13 @@ PDF (lego.com / ikea.com, or an upload)
   → voice: Azure speech-to-text, Claude /api/assist, Cartesia /api/tts
 ```
 
-Phone-to-laptop pairing uses a transport interface. With no Azure connection string it is an in-memory room plus server-sent events on this process. With `WEBPUBSUB_CONNECTION_STRING` set, publish goes through the Azure Web PubSub REST API.
+Phone-to-laptop pairing uses a transport interface. With no Azure connection string it is an in-memory room plus server-sent events on this process. The `WEBPUBSUB_CONNECTION_STRING` transport is a mocked Azure REST stub, not a deployable cross-instance pairing implementation. Leave it unset for local testing.
 
 Manual PDFs are loaded through same-origin rewrites (`/manual-pdf/lego/…`, `/manual-pdf/ikea/…`) so the browser is not blocked by CORS. Those rewrites only forward to `www.lego.com` and `www.ikea.com`, and only for instruction-PDF paths.
 
 ## Setup
+
+Use Node 22.18+ (or a newer LTS) and npm.
 
 ```bash
 npm ci
@@ -73,13 +75,15 @@ Names only. Values stay in `.env.local` or the host's secret store. See `.env.ex
 | `npm run test:assist` | Streaming assist JSON. |
 | `npm run test:auto` | Auto Mode timing. |
 | `npm run test:practice` | Practice-mode measurements. |
+| `npm run test:http` | HTTP boundary and local pairing smoke; requires a server on port 3102 with provider keys unset. |
+| `npm run test:browser` | Playwright smoke at 390×844 with a simulated camera and mocked paid endpoints; requires that server and Chromium. |
 | `npm run test:eval` | Offline check-verdict fixtures. No network. |
 | `npm run test:pairing` | Pairing schema, in-memory transport, mocked Azure transport, QR matrix. |
 | `npm run test:summary` | Session summary Markdown and the "I'm done building" command. |
 | `npm run test:faults` | Camera, mic, offline, and rate-limit copy. |
 | `npm run test:metrics` | Request counters stay off unless Application Insights is configured. |
 
-Suites run with `node --experimental-strip-types`. They mock any Claude, Cartesia, or Azure call. None of them touch the network.
+`npm test` runs offline with `node --experimental-strip-types` and mocked provider calls. The separate HTTP/browser smoke scripts contact only a local server; browser tests block external requests. See [validation commands](docs/hardening-validation.md).
 
 ## Observability
 
@@ -101,6 +105,7 @@ Rate limits and the daily Claude ceiling are per server instance, in memory. The
 
 ## Limitations
 
+- The existing Azure identity/MSAL dependency has an unresolved high-severity advisory (GHSA-xcx6-jx8p-x3h5); no incompatible major-version override was forced.
 - Real-camera accuracy is not covered by CI. It needs a phone over a build.
 - Azure Web PubSub, Speech, and Application Insights are not provisioned by this repo. Without their keys the local fallbacks run: in-memory pairing, and speech/voice routes return a clear "not set up" error.
 - The library (manuals, progress, extracted steps) lives in the browser's IndexedDB. Each device has its own copy.
@@ -110,3 +115,7 @@ Rate limits and the daily Claude ceiling are per server instance, in memory. The
 ## License and credits
 
 Hackathon project. Third-party photos on the display-only hub categories are listed in [CREDITS.md](CREDITS.md).
+
+## Combined hardening validation
+
+The post-event maintenance work is consolidated on `improve/full-project`. See [hardening validation](docs/hardening-validation.md) and [task checklist](BUILDSIGHT-TASKS.md). `main` and the upstream repository are unchanged.

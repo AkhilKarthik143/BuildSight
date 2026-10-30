@@ -1,166 +1,67 @@
-// Claude client selection and error scrubbing. fetch is mocked; this file never calls the network.
-// The host strings below are the mock's allowlist, not live requests.
-import { askClaude, logClaudeUsage, resetClaudeForTests } from "../src/lib/claude.ts";
-
-const ANTHROPIC = "sk-ant-test-DO-NOT-LEAK";
-const OPENROUTER = "sk-or-test-DO-NOT-LEAK";
-const savedFetch = globalThis.fetch;
-const savedInfo = console.info;
-const usageLogs = [];
-console.info = (...args) => {
-  usageLogs.push(args.map((part) => String(part)).join(" "));
+// Every provider call goes through this mock; no credentials are read from .env files.
+import assert from 'node:assert/strict';
+process.env.ANTHROPIC_API_KEY='';process.env.OPENROUTER_API_KEY='';
+let calls=[], reply;
+globalThis.fetch=async(url,init)=>{
+ const req=new Request(url,init);const body=await req.json();
+ calls.push({url:req.url,headers:req.headers,body});
+ assert.equal(Object.hasOwn(body,'temperature'),false,'never send temperature');
+ if(!reply) throw new Error('Unexpected network call');
+ return reply(req,body);
 };
-const savedAnthropic = process.env.ANTHROPIC_API_KEY;
-const savedOpenRouter = process.env.OPENROUTER_API_KEY;
-
-let failed = 0;
-function check(name, ok) {
-  if (!ok) failed++;
-  console.log(`${ok ? "PASS" : "FAIL"}  ${name}`);
+const {askClaude,streamClaude,ClaudeError,claudeConfigured}=await import('../src/lib/claude.ts');
+const ask={system:'test',parts:[{type:'text',text:'hello'},{type:'image',dataUrl:'data:image/png;base64,YQ=='}]};
+assert.equal(claudeConfigured(),false);
+await assert.rejects(()=>askClaude(ask),e=>e instanceof ClaudeError && e.status===500);assert.equal(calls.length,0);
+process.env.OPENROUTER_API_KEY='offline-openrouter-placeholder';
+reply=()=>Response.json({choices:[{message:{content:'router answer'}}]});
+assert.equal(await askClaude(ask),'router answer');
+assert.equal(calls.at(-1).url,'https://openrouter.ai/api/v1/chat/completions');
+assert.equal(calls.at(-1).headers.get('authorization'),'Bearer offline-openrouter-placeholder');
+assert.equal(calls.at(-1).body.max_tokens,16000);
+assert.equal(calls.at(-1).body.messages[1].content[1].image_url.url,ask.parts[1].dataUrl);
+assert.equal(claudeConfigured(),true);
+let chunks=[];for await(const chunk of streamClaude('test',[{role:'user',text:'question'}]))chunks.push(chunk);
+assert.deepEqual(chunks,['router answer']);
+reply=()=>new Response('offline-openrouter-placeholder SECRET upstream',{status:400});
+await assert.rejects(()=>askClaude(ask),e=>e.status===502 && !/placeholder|SECRET/.test(e.message));
+reply=()=>{throw new Error('SECRET transport headers');};
+await assert.rejects(()=>askClaude(ask),e=>e instanceof ClaudeError && !/SECRET/.test(e.message));
+reply=()=>new Response('SECRET malformed upstream reply');
+await assert.rejects(()=>askClaude(ask),e=>e instanceof ClaudeError && !/SECRET/.test(e.message));
+reply=()=>Response.json({choices:[{message:{content:{unexpected:true}}}]});
+await assert.rejects(()=>askClaude(ask),e=>e instanceof ClaudeError);
+process.env.ANTHROPIC_API_KEY='offline-anthropic-placeholder';
+const msg={id:'msg_test',type:'message',role:'assistant',model:'mock',content:[{type:'text',text:'anthropic answer'}],stop_reason:'end_turn',stop_sequence:null,usage:{input_tokens:1,output_tokens:1}};
+reply=()=>Response.json(msg);
+assert.equal(await askClaude({...ask,effort:'medium'}),'anthropic answer');
+assert.match(calls.at(-1).url,/api\.anthropic\.com\/v1\/messages/);
+assert.equal(calls.at(-1).headers.get('authorization'),'Bearer offline-anthropic-placeholder');
+assert.equal(calls.at(-1).body.output_config.effort,'medium');
+assert.equal(calls.at(-1).body.max_tokens,16000);
+assert.equal(calls.at(-1).body.messages[0].content[1].source.media_type,'image/png');
+const count=calls.length;
+await assert.rejects(()=>askClaude({system:'test',parts:[{type:'image',dataUrl:'https://evil.test/image'}]}),e=>e.status===400);
+assert.equal(calls.length,count,'invalid data URL never sent');
+reply=()=>Response.json({...msg,stop_reason:'refusal'});
+await assert.rejects(()=>askClaude(ask),e=>e.status===422);
+for(const status of [400,401,429]){
+ reply=()=>Response.json({type:'error',error:{type:status===401?'authentication_error':status===429?'rate_limit_error':'invalid_request_error',message:'SECRET offline-anthropic-placeholder'}},{status,headers:{'x-should-retry':'false'}});
+ await assert.rejects(()=>askClaude(ask),e=>e instanceof ClaudeError&&!/SECRET|placeholder/.test(e.message));
 }
-
-function restoreEnv() {
-  if (savedAnthropic === undefined) delete process.env.ANTHROPIC_API_KEY;
-  else process.env.ANTHROPIC_API_KEY = savedAnthropic;
-  if (savedOpenRouter === undefined) delete process.env.OPENROUTER_API_KEY;
-  else process.env.OPENROUTER_API_KEY = savedOpenRouter;
-  globalThis.fetch = savedFetch;
-  console.info = savedInfo;
-  resetClaudeForTests();
-}
-
-function usageLines() {
-  return usageLogs.flatMap((line) => {
-    try {
-      const parsed = JSON.parse(line);
-      return parsed && parsed.event === "claude.usage" ? [parsed] : [];
-    } catch {
-      return [];
-    }
-  });
-}
-
-function usageIsSafe(line) {
-  if (!line || typeof line !== "object") return false;
-  const keys = Object.keys(line).sort().join(",");
-  const text = JSON.stringify(line);
-  return keys === "event,inputTokens,model,outputTokens" && !text.includes("hi") && !text.includes("DO-NOT-LEAK") && !text.includes("data:image");
-}
-
-function message(text) {
-  return {
-    id: "msg_test",
-    type: "message",
-    role: "assistant",
-    model: "claude-sonnet-5-5",
-    content: [{ type: "text", text }],
-    stop_reason: "end_turn",
-    stop_sequence: null,
-    usage: { input_tokens: 3, output_tokens: 4 },
-  };
-}
-
-/**
- * @param {(url: string, body: unknown) => { status?: number, json: unknown }} reply
- */
-function install(reply) {
-  const calls = [];
-  globalThis.fetch = async (input, init) => {
-    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-    const raw = init?.body ?? (typeof input !== "string" && !(input instanceof URL) ? input.body : undefined);
-    const body = typeof raw === "string" ? JSON.parse(raw) : null;
-    calls.push({ url, body });
-    if (!url.includes("api.anthropic.com") && !url.includes("openrouter.ai")) {
-      throw new Error(`unmocked host ${url}`);
-    }
-    const out = reply(url, body);
-    return new Response(JSON.stringify(out.json), {
-      status: out.status ?? 200,
-      headers: { "content-type": "application/json" },
-    });
-  };
-  return calls;
-}
-
-function noTemperature(body) {
-  return body != null && !Object.prototype.hasOwnProperty.call(body, "temperature");
-}
-
-function leaked(err) {
-  const text = `${err?.message ?? ""} ${err?.stack ?? ""}`;
-  return text.includes(ANTHROPIC) || text.includes(OPENROUTER) || text.includes("DO-NOT-LEAK");
-}
-
-async function main() {
-  resetClaudeForTests();
-  delete process.env.ANTHROPIC_API_KEY;
-  delete process.env.OPENROUTER_API_KEY;
-
-  let threw = false;
-  try {
-    await askClaude({ system: "s", parts: [{ type: "text", text: "hi" }] });
-  } catch (e) {
-    threw = true;
-    check("missing key does not echo a key", !leaked(e) && /No Claude key/.test(e.message));
-  }
-  check("missing key throws", threw);
-
-  process.env.OPENROUTER_API_KEY = OPENROUTER;
-  delete process.env.ANTHROPIC_API_KEY;
-  resetClaudeForTests();
-  const openCalls = install(() => ({ json: { choices: [{ message: { content: "from openrouter" } }], usage: { prompt_tokens: 11, completion_tokens: 2 } } }));
-  const openText = await askClaude({ system: "secret prompt hi", parts: [{ type: "text", text: "hi" }] });
-  check("openrouter selected when it is the only key", openCalls.length === 1 && openCalls[0].url.includes("openrouter.ai") && openText === "from openrouter");
-  check("openrouter body has no temperature", noTemperature(openCalls[0].body));
-  const openUsage = usageLines().at(-1);
-  check("openrouter usage log", openUsage?.inputTokens === 11 && openUsage?.outputTokens === 2 && usageIsSafe(openUsage));
-
-  process.env.ANTHROPIC_API_KEY = ANTHROPIC;
-  process.env.OPENROUTER_API_KEY = OPENROUTER;
-  resetClaudeForTests();
-  const both = install((url) => {
-    if (url.includes("openrouter.ai")) return { json: { choices: [{ message: { content: "wrong" } }] } };
-    return { json: message("from anthropic") };
-  });
-  const anthText = await askClaude({ system: "s", parts: [{ type: "text", text: "hi" }] });
-  check("anthropic wins when both keys are set", both.length === 1 && both[0].url.includes("api.anthropic.com") && anthText === "from anthropic");
-  check("anthropic body has no temperature", noTemperature(both[0].body));
-  const anthUsage = usageLines().at(-1);
-  check("anthropic usage log", anthUsage?.inputTokens === 3 && anthUsage?.outputTokens === 4 && usageIsSafe(anthUsage));
-  const beforeErrors = usageLines().length;
-
-  resetClaudeForTests();
-  install(() => ({ status: 500, json: { error: { message: `upstream said ${ANTHROPIC}` } } }));
-  try {
-    await askClaude({ system: "s", parts: [{ type: "text", text: "hi" }] });
-    check("anthropic error throws", false);
-  } catch (e) {
-    check("anthropic error throws", true);
-    check("anthropic error hides the key", !leaked(e) && !/upstream said/.test(e.message));
-  }
-
-  delete process.env.ANTHROPIC_API_KEY;
-  process.env.OPENROUTER_API_KEY = OPENROUTER;
-  resetClaudeForTests();
-  install(() => ({ status: 502, json: { error: OPENROUTER } }));
-  try {
-    await askClaude({ system: "s", parts: [{ type: "text", text: "hi" }] });
-    check("openrouter error throws", false);
-  } catch (e) {
-    check("openrouter error throws", true);
-    check("openrouter error hides the key", !leaked(e) && e.message === "OpenRouter request failed.");
-  }
-  check("failed calls are not usage logs", usageLines().length === beforeErrors);
-  const blank = logClaudeUsage("claude-sonnet-5-5", "not-a-count", undefined);
-  check("non-numeric usage is null", blank.inputTokens === null && blank.outputTokens === null && usageIsSafe(blank));
-
-  console.log(failed ? `\n${failed} failed` : "\nclaude tests passed");
-  restoreEnv();
-  if (failed) process.exit(1);
-}
-
-main().catch((e) => {
-  console.error(e);
-  restoreEnv();
-  process.exit(1);
-});
+const events=[
+ {type:'message_start',message:{...msg,content:[],stop_reason:null,usage:{input_tokens:1,output_tokens:0}}},
+ {type:'content_block_start',index:0,content_block:{type:'text',text:''}},
+ {type:'content_block_delta',index:0,delta:{type:'text_delta',text:'Hello.'}},
+ {type:'content_block_stop',index:0},
+ {type:'message_delta',delta:{stop_reason:'end_turn',stop_sequence:null},usage:{output_tokens:1}},
+ {type:'message_stop'},
+];
+reply=()=>new Response(events.map(e=>`event: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`).join(''),{headers:{'content-type':'text/event-stream'}});
+chunks=[];for await(const chunk of streamClaude('test',[{role:'user',text:'look',image:ask.parts[1].dataUrl},{role:'assistant',text:'ok'},{role:'user',text:'next?'}]))chunks.push(chunk);
+assert.deepEqual(chunks,['Hello.']);
+assert.equal(calls.at(-1).body.stream,true);assert.equal(calls.at(-1).body.max_tokens,2000);
+assert.equal(calls.at(-1).body.output_config.effort,'low');assert.equal(calls.at(-1).body.messages.length,3);
+reply=()=>Response.json({type:'error',error:{type:'invalid_request_error',message:'SECRET offline-anthropic-placeholder'}},{status:400,headers:{'x-should-retry':'false'}});
+await assert.rejects(async()=>{for await(const ignored of streamClaude('test',[{role:'user',text:'x'}]))void ignored;},e=>!e.message.includes('SECRET'));
+console.log('Claude: provider choice, payload settings, images, streaming/refusal and sanitized errors passed using mocked fetch only.');

@@ -1,3 +1,4 @@
+import { isIP } from "node:net";
 // In-memory token bucket, keyed by client IP and route.
 // One Node process only: a restart or a second instance has its own buckets.
 // The IP is the first x-forwarded-for hop. That hop is whatever the edge proxy put there;
@@ -21,19 +22,21 @@ export type RouteId =
 
 // Cheap routes are polled or searched. Expensive routes call Claude, Cartesia, or Azure.
 export const ROUTE_LIMITS: Record<RouteId, Limit> = {
-  "speech-token": { capacity: 20, refillPerSec: 2 },
-  search: { capacity: 12, refillPerSec: 1 },
+  "speech-token": { capacity: 20, refillPerSec: 1 / 3 },
+  search: { capacity: 20, refillPerSec: 1 / 3 },
   pair: { capacity: 20, refillPerSec: 1 },
   "pair-events": { capacity: 20, refillPerSec: 1 },
   "pair-publish": { capacity: 30, refillPerSec: 10 },
-  check: { capacity: 6, refillPerSec: 0.2 },
-  assist: { capacity: 6, refillPerSec: 0.2 },
-  extract: { capacity: 8, refillPerSec: 0.5 },
-  locate: { capacity: 12, refillPerSec: 1 },
-  "where-am-i": { capacity: 4, refillPerSec: 0.1 },
-  vision: { capacity: 6, refillPerSec: 0.2 },
-  tts: { capacity: 12, refillPerSec: 2 },
+  check: { capacity: 12, refillPerSec: 1 / 4 },
+  assist: { capacity: 10, refillPerSec: 1 / 3 },
+  extract: { capacity: 30, refillPerSec: 1 },
+  locate: { capacity: 24, refillPerSec: 2 },
+  "where-am-i": { capacity: 6, refillPerSec: 1 / 10 },
+  vision: { capacity: 12, refillPerSec: 1 / 4 },
+  tts: { capacity: 30, refillPerSec: 1 },
 };
+export const RATE_LIMITS = ROUTE_LIMITS;
+export type ApiRoute = RouteId;
 
 export const CLAUDE_ROUTES: ReadonlySet<RouteId> = new Set(["check", "assist", "extract", "locate", "where-am-i", "vision"]);
 
@@ -47,22 +50,14 @@ export function clientIp(request: Request): string {
   const raw = request.headers.get("x-forwarded-for");
   if (raw) {
     const hop = raw.split(",")[0]?.trim();
-    if (hop) return hop.slice(0, 80);
+    if (hop && isIP(hop)) return hop;
   }
   return "unknown";
 }
 
-/** Drop buckets that have not been touched for `staleMs`, then the oldest, until `store` can hold `maxKeys`. */
-export function evict(store: LimitStore, now: number, maxKeys: number, staleMs = STALE_MS) {
-  for (const [key, bucket] of store) {
-    if (now - bucket.updated > staleMs) store.delete(key);
-  }
-  if (store.size < maxKeys) return;
-  const oldest = [...store.entries()].sort((a, b) => a[1].updated - b[1].updated);
-  while (store.size >= maxKeys && oldest.length) {
-    const next = oldest.shift();
-    if (next) store.delete(next[0]);
-  }
+/** Drop only stale entries; active quotas must never be evicted to admit a new IP. */
+export function evict(store: LimitStore, now: number, _maxKeys: number, staleMs = STALE_MS) {
+  for (const [key, bucket] of store) if (now - bucket.updated >= staleMs) store.delete(key);
 }
 
 /**
@@ -79,6 +74,7 @@ export function takeToken(
 ): { ok: boolean; retryAfterSec: number } {
   evict(store, now, store.has(key) ? maxKeys + 1 : maxKeys, staleMs);
   let bucket = store.get(key);
+  if (!bucket && store.size >= maxKeys) return { ok: false, retryAfterSec: Math.max(1, Math.ceil(staleMs / 1000)) };
   if (!bucket) {
     bucket = { tokens: limit.capacity, updated: now };
     store.set(key, bucket);
@@ -110,3 +106,14 @@ export function consume(ip: string, route: RouteId, now = Date.now()): { ok: boo
 export function resetLimitsForTests() {
   buckets().clear();
 }
+
+export function createRateLimiter(maxKeys = MAX_KEYS, staleMs = STALE_MS) {
+  const store: LimitStore = new Map();
+  return {
+    get size() { return store.size; },
+    take(ip: string, route: RouteId, now = Date.now()) {
+      return takeToken(store, `${ip}\n${route}`, ROUTE_LIMITS[route], now, maxKeys, staleMs);
+    },
+  };
+}
+export const apiRateLimiter = { take: consume };

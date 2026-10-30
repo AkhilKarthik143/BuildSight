@@ -1,6 +1,6 @@
 // The browsable catalog, built by scripts/build-catalog.mjs (every item verified to have instructions).
 
-import data from "@/data/catalog.json";
+import data from "../data/catalog.json" with { type: "json" };
 import { mixed, type CatalogItem } from "./catalogQuery.ts";
 
 export type { CatalogItem, CatalogManual, CatalogResult } from "./catalogQuery.ts";

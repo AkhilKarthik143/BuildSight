@@ -1,18 +1,15 @@
+import { withApiGuard } from "@/lib/apiGuard";
 // "Where am I?" for a half-built or broken build. The phone sends contact sheets of the manual's step
 // pictures (src/lib/whereAmI.ts) and a camera frame. Tiles are numbered 1, 2, 3... in book order, not by
 // the printed step number, because sub-builds restart their numbering. Claude returns the furthest tile
 // the build has reached and any earlier tile that looks broken (a piece missing, wrong, moved or rotated).
 
-import { guard } from "@/lib/apiGuard";
-import { asImage } from "@/lib/apiInput";
 import { askClaude, ClaudeError, type Part } from "@/lib/claude";
-import { firstJsonObject } from "@/lib/json";
+import { parseWhereAmIResult } from "@/lib/whereAmIResult";
+export type { BrokenTile, WhereAmIResult } from "@/lib/whereAmIResult";
 
 const MAX_IMAGE_CHARS = 4_000_000;
 const MAX_SHEETS = 8;
-
-export type BrokenTile = { tile: number; part: string; problem: string; fix: string };
-export type WhereAmIResult = { completed_tile: number; confidence: number; broken: BrokenTile[] };
 
 type WhereAmIRequest = {
   frame?: string; // camera frame, data URL
@@ -34,32 +31,17 @@ Reply with JSON only, no other text:
 Set confidence below 0.7 when two tiles look alike, the view is unclear, or no tile matches well.`;
 
 function isImage(s: unknown): s is string {
-  return asImage(s, MAX_IMAGE_CHARS) !== null;
+  return typeof s === "string" && s.startsWith("data:image/") && s.length <= MAX_IMAGE_CHARS;
 }
 
-function readSheets(value: unknown): { image: string; numbers: number[] }[] {
-  if (!Array.isArray(value)) return [];
-  const out: { image: string; numbers: number[] }[] = [];
-  for (const sheet of value.slice(0, MAX_SHEETS)) {
-    if (!sheet || typeof sheet !== "object") continue;
-    const image = asImage((sheet as { image?: unknown }).image, MAX_IMAGE_CHARS);
-    const rawNumbers = (sheet as { numbers?: unknown }).numbers;
-    const numbers = Array.isArray(rawNumbers)
-      ? rawNumbers.filter((n): n is number => typeof n === "number" && Number.isInteger(n) && n >= 0 && n <= 10000).slice(0, 40)
-      : [];
-    if (image && numbers.length) out.push({ image, numbers });
-  }
-  return out;
-}
-
-async function post(request: Request) {
+async function handlePOST(request: Request) {
   let body: WhereAmIRequest;
   try {
     body = await request.json();
   } catch {
     return Response.json({ error: "Body must be JSON." }, { status: 400 });
   }
-  const sheets = readSheets(body.sheets);
+  const sheets = (body.sheets ?? []).filter((s) => isImage(s.image) && Array.isArray(s.numbers) && s.numbers.length).slice(0, MAX_SHEETS);
   if (!isImage(body.frame) || !sheets.length) return Response.json({ error: "Send `frame` and at least one contact sheet." }, { status: 400 });
 
   const parts: Part[] = [];
@@ -75,16 +57,8 @@ async function post(request: Request) {
   try {
     // A hard visual comparison: keep thinking on (askClaude's default) at medium effort.
     const text = await askClaude({ system: SYSTEM_PROMPT, parts, effort: "medium" });
-    const r = firstJsonObject(text) as { completed_tile?: unknown; confidence?: unknown; broken?: unknown } | null;
-    const tile = Number(r?.completed_tile);
-    if (!r || !valid.has(tile) || typeof r.confidence !== "number") {
-      return Response.json({ error: "Couldn't tell where you are." }, { status: 502 });
-    }
-    const broken = (Array.isArray(r.broken) ? r.broken : [])
-      .map((b: Record<string, unknown>) => ({ tile: Number(b?.tile), part: String(b?.part ?? ""), problem: String(b?.problem ?? ""), fix: String(b?.fix ?? "") }))
-      .filter((b) => valid.has(b.tile) && b.tile > 0 && b.tile <= tile && b.problem)
-      .sort((a, b) => a.tile - b.tile);
-    const result: WhereAmIResult = { completed_tile: tile, confidence: Math.max(0, Math.min(1, r.confidence)), broken };
+    const result = parseWhereAmIResult(text, valid);
+    if (!result) return Response.json({ error: "Couldn't tell where you are." }, { status: 502 });
     return Response.json({ ...result, latencyMs: Date.now() - started });
   } catch (e) {
     const err = e instanceof ClaudeError ? e : new ClaudeError("Couldn't tell where you are.");
@@ -92,4 +66,4 @@ async function post(request: Request) {
   }
 }
 
-export const POST = guard("where-am-i", post);
+export const POST = withApiGuard("where-am-i", handlePOST);

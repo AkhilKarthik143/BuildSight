@@ -1,0 +1,10 @@
+{
+  "name": "wrong-type",
+  "provenance": "hand-authored model-output regression fixture; not a real-photo observation",
+  "raw": "{\"step_complete\": \"yes\", \"confidence\": 0.9}",
+  "expected": {
+    "verdict": "invalid",
+    "pass": false,
+    "locations": []
+  }
+}
