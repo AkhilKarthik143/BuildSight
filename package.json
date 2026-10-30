@@ -38,6 +38,7 @@
     "@react-three/drei": "^10.7.9",
     "@react-three/fiber": "^9.8.2",
     "idb-keyval": "^6.3.0",
+    "js-aruco2": "2.0.0",
     "microsoft-cognitiveservices-speech-sdk": "^1.53.0",
     "motion": "^14.6.0",
     "next": "16.4.3",
@@ -54,8 +55,8 @@
     "@types/three": "^0.186.0",
     "eslint": "^9",
     "eslint-config-next": "16.4.3",
+    "playwright": "^1.64.1",
     "tailwindcss": "^4",
-    "typescript": "^5",
-    "playwright": "^1.64.1"
+    "typescript": "^5"
   }
 }

@@ -247,3 +247,9 @@ Practice Mode sometimes spoke in the browser's built-in voice. Cartesia only acc
 - The final UI uses the smaller composition from hardening plus summary/pair controls and summary voice commands from the fork. Duplicate controllers/state stores were removed; production checks and both offline eval schemas share one parser (33 fixtures).
 
 - Consolidation verified: clean install, lint, typecheck, all offline tests (33/33 eval), production build, local HTTP/pairing round trip and 390×844 mocked browser regression all passed. Real phone/camera accuracy and Azure integration remain untested.
+
+## Full-project pass — marker AR, 2026-10-30
+
+- Extend the existing camera UI with an opt-in printed ArUco mat, using js-aruco2 in a worker. Homography tracks a plane; it is not SLAM or a measurement of tall pieces. The builder must keep the build fixed relative to the mat. See FULL-PROJECT-AR-TASKS.md for the audit and design decisions.
+- Manual-image coordinates are not camera coordinates. New placement pins are explicitly user-positioned for the active step. No guessed stud placements or automatic completions. Mistake boxes are registered using the exact checked image. Lost tracking restores the existing camera-motion fallback.
+- Preserve “I'm done” as Check build; “I'm done building” opens the summary. Keep the mic mute toggle, existing navigation and isPass rule. Optional WebXR placement is deferred to protect the marker path; capability detection will be tested but no second tracking UX introduced.
