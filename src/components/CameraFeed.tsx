@@ -12,6 +12,7 @@ import { speaker } from "@/lib/speech";
 
 export type CameraHandle = {
   capture: () => string | null;
+  sampleFrame?: () => ImageData | null;
   sample: () => Uint8ClampedArray | null;
   sampleFine: () => Uint8ClampedArray | null;
   size: () => { w: number; h: number } | null;
@@ -26,7 +27,7 @@ const FINE_H = 48;
 type Sampler = { w: number; h: number; ctx: CanvasRenderingContext2D | null };
 
 // Draws the video into a small canvas and returns grayscale pixels.
-function grayscale(v: HTMLVideoElement, s: Sampler): Uint8ClampedArray | null {
+function grayscale(v: CanvasImageSource, s: Sampler): Uint8ClampedArray | null {
   if (!s.ctx) {
     const c = document.createElement("canvas");
     c.width = s.w;
@@ -42,13 +43,19 @@ function grayscale(v: HTMLVideoElement, s: Sampler): Uint8ClampedArray | null {
   return gray;
 }
 
-const CameraFeed = forwardRef<CameraHandle>(function CameraFeed(_, ref) {
+type Props = { remoteEnabled?: boolean; remoteFrame?: string | null; muted?: boolean };
+const CameraFeed = forwardRef<CameraHandle, Props>(function CameraFeed({ remoteEnabled = false, remoteFrame = null, muted = false }, ref) {
   const video = useRef<HTMLVideoElement>(null);
+  const remote = useRef<HTMLImageElement>(null);
+  const mutedRef = useRef(muted);
+  useEffect(() => { mutedRef.current = muted; }, [muted]);
   const [error, setError] = useState<string | null>(null);
   const sampler = useRef<Sampler>({ w: SAMPLE_W, h: SAMPLE_H, ctx: null });
+  const arCanvas = useRef<HTMLCanvasElement | null>(null);
   const fine = useRef<Sampler>({ w: FINE_W, h: FINE_H, ctx: null });
 
   useEffect(() => {
+    if (remoteEnabled) return;
     let stream: MediaStream | null = null;
     let cancelled = false;
 
@@ -65,12 +72,13 @@ const CameraFeed = forwardRef<CameraHandle>(function CameraFeed(_, ref) {
         });
         if (cancelled) return stream.getTracks().forEach((t) => t.stop());
         if (video.current) video.current.srcObject = stream;
+        setError(null);
       } catch (e) {
         const denied = e instanceof DOMException && (e.name === "NotAllowedError" || e.name === "PermissionDeniedError");
         if (denied) {
           const fault = faultCopy("camera-denied");
           setError(`${fault.title}. ${fault.detail}`);
-          speaker().say(fault.say);
+          if (!mutedRef.current) speaker().say(fault.say);
         } else {
           setError(e instanceof Error ? `Camera blocked: ${e.message}` : "Camera blocked.");
         }
@@ -82,37 +90,57 @@ const CameraFeed = forwardRef<CameraHandle>(function CameraFeed(_, ref) {
       cancelled = true;
       stream?.getTracks().forEach((t) => t.stop());
     };
-  }, []);
+  }, [remoteEnabled]);
 
+  function currentSource() {
+    const image = remote.current, v = video.current;
+    if (remoteEnabled) return remoteFrame && image?.complete && image.naturalWidth ? { image, w: image.naturalWidth, h: image.naturalHeight } : null;
+    return v?.videoWidth ? { image: v, w: v.videoWidth, h: v.videoHeight } : null;
+  }
   useImperativeHandle(ref, () => ({
+    sampleFrame() {
+      const source = currentSource();
+      if (!source) return null;
+      const canvas = arCanvas.current ??= document.createElement("canvas");
+      const h = Math.round(320 * source.h / source.w);
+      if (canvas.width !== 320 || canvas.height !== h) { canvas.width = 320; canvas.height = h; }
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      if (!ctx) return null;
+      ctx.drawImage(source.image, 0, 0, 320, h);
+      return ctx.getImageData(0, 0, 320, h);
+    },
     capture() {
-      const v = video.current;
-      if (!v || !v.videoWidth) return null;
-      const scale = Math.min(1, MAX_SIDE / Math.max(v.videoWidth, v.videoHeight));
+      const source = currentSource();
+      if (!source) return null;
+      const scale = Math.min(1, MAX_SIDE / Math.max(source.w, source.h));
       const canvas = document.createElement("canvas");
-      canvas.width = Math.round(v.videoWidth * scale);
-      canvas.height = Math.round(v.videoHeight * scale);
-      canvas.getContext("2d")?.drawImage(v, 0, 0, canvas.width, canvas.height);
+      canvas.width = Math.round(source.w * scale);
+      canvas.height = Math.round(source.h * scale);
+      canvas.getContext("2d")?.drawImage(source.image, 0, 0, canvas.width, canvas.height);
       return canvas.toDataURL("image/jpeg", 0.7);
     },
     size() {
-      const v = video.current;
-      return v && v.videoWidth ? { w: v.videoWidth, h: v.videoHeight } : null;
+      const source = currentSource();
+      return source ? { w: source.w, h: source.h } : null;
     },
     sample() {
-      const v = video.current;
-      return v && v.videoWidth ? grayscale(v, sampler.current) : null;
+      const source = currentSource();
+      return source ? grayscale(source.image, sampler.current) : null;
     },
     sampleFine() {
-      const v = video.current;
-      return v && v.videoWidth ? grayscale(v, fine.current) : null;
+      const source = currentSource();
+      return source ? grayscale(source.image, fine.current) : null;
     },
   }));
 
   return (
     <div className="absolute inset-0 bg-black">
-      <video ref={video} autoPlay playsInline muted className="h-full w-full object-cover" />
-      {error && (
+      {remoteEnabled ? (remoteFrame ? (
+        // eslint-disable-next-line @next/next/no-img-element -- private same-origin paired camera frame
+        <img ref={remote} src={remoteFrame} alt="Phone camera" className="h-full w-full object-cover" />
+      ) : <p className="absolute inset-0 grid place-items-center p-6 text-center text-sm text-white/70">Phone camera paused. Reconnect the phone or choose the laptop camera in Pair.</p>) : <video ref={video} autoPlay playsInline muted className="h-full w-full object-cover" />}
+      {remoteEnabled && <p className="absolute left-3 top-14 z-20 rounded-full bg-ink/90 px-2 py-1 text-[10px] text-holo">Phone camera · preview rate</p>}
+      {error && !remoteEnabled && (
         <div className="absolute inset-0 grid place-items-center p-6 text-center text-sm text-white/80">
           {error}
         </div>

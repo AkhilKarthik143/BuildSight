@@ -12,7 +12,7 @@
     "test:boxes": "node --experimental-strip-types --no-warnings scripts/test-boxes.mjs",
     "test:parts": "node --experimental-strip-types --no-warnings scripts/test-parts.mjs",
     "test:assist": "node --experimental-strip-types --no-warnings scripts/test-assist.mjs",
-    "test": "npm run test:boxes && npm run test:commands && npm run test:parts && npm run test:assist && npm run test:auto && npm run test:practice && npm run test:api-guard && npm run test:api-guard-features && npm run test:build-helpers && npm run test:steps && npm run test:pure && npm run test:claude && npm run test:claude-features && npm run test:library && npm run test:eval && npm run test:pairing && npm run test:summary && npm run test:faults && npm run test:metrics",
+    "test": "npm run test:boxes && npm run test:commands && npm run test:parts && npm run test:assist && npm run test:auto && npm run test:practice && npm run test:api-guard && npm run test:api-guard-features && npm run test:build-helpers && npm run test:steps && npm run test:pure && npm run test:claude && npm run test:claude-features && npm run test:library && npm run test:eval && npm run test:pairing && npm run test:summary && npm run test:faults && npm run test:metrics && npm run test:ar && npm run test:pwa",
     "test:metrics": "node --experimental-strip-types --no-warnings scripts/test-metrics.mjs",
     "test:pairing": "node --experimental-strip-types --no-warnings scripts/test-pairing.mjs",
     "test:summary": "node --experimental-strip-types --no-warnings scripts/test-summary.mjs",
@@ -30,7 +30,12 @@
     "test:http": "node scripts/test-http.mjs",
     "test:browser": "node scripts/test-build-browser.mjs",
     "test:api-guard-features": "node --experimental-strip-types --no-warnings scripts/test-api-guard-features.mjs",
-    "test:claude-features": "node --experimental-strip-types --no-warnings scripts/test-claude-features.mjs"
+    "test:claude-features": "node --experimental-strip-types --no-warnings scripts/test-claude-features.mjs",
+    "test:ar": "node --experimental-strip-types --no-warnings scripts/test-ar.mjs",
+    "bench:ar": "node --experimental-strip-types --no-warnings scripts/bench-ar.mjs",
+    "test:ar:browser": "node --experimental-strip-types --no-warnings scripts/test-ar-browser.mjs",
+    "test:pwa": "node scripts/test-pwa.mjs",
+    "test:pairing:browser": "node scripts/test-pairing-browser.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.3.0",
@@ -38,6 +43,7 @@
     "@react-three/drei": "^10.7.9",
     "@react-three/fiber": "^9.8.2",
     "idb-keyval": "^6.3.0",
+    "js-aruco2": "2.0.0",
     "microsoft-cognitiveservices-speech-sdk": "^1.53.0",
     "motion": "^14.6.0",
     "next": "16.4.3",
@@ -54,8 +60,8 @@
     "@types/three": "^0.186.0",
     "eslint": "^9",
     "eslint-config-next": "16.4.3",
+    "playwright": "^1.64.1",
     "tailwindcss": "^4",
-    "typescript": "^5",
-    "playwright": "^1.64.1"
+    "typescript": "^5"
   }
 }
