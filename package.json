@@ -12,7 +12,7 @@
     "test:boxes": "node --experimental-strip-types --no-warnings scripts/test-boxes.mjs",
     "test:parts": "node --experimental-strip-types --no-warnings scripts/test-parts.mjs",
     "test:assist": "node --experimental-strip-types --no-warnings scripts/test-assist.mjs",
-    "test": "npm run test:boxes && npm run test:commands && npm run test:parts && npm run test:assist && npm run test:auto && npm run test:practice && npm run test:api-guard && npm run test:api-guard-features && npm run test:build-helpers && npm run test:steps && npm run test:pure && npm run test:claude && npm run test:claude-features && npm run test:library && npm run test:eval && npm run test:pairing && npm run test:summary && npm run test:faults && npm run test:metrics && npm run test:ar",
+    "test": "npm run test:boxes && npm run test:commands && npm run test:parts && npm run test:assist && npm run test:auto && npm run test:practice && npm run test:api-guard && npm run test:api-guard-features && npm run test:build-helpers && npm run test:steps && npm run test:pure && npm run test:claude && npm run test:claude-features && npm run test:library && npm run test:eval && npm run test:pairing && npm run test:summary && npm run test:faults && npm run test:metrics && npm run test:ar && npm run test:pwa",
     "test:metrics": "node --experimental-strip-types --no-warnings scripts/test-metrics.mjs",
     "test:pairing": "node --experimental-strip-types --no-warnings scripts/test-pairing.mjs",
     "test:summary": "node --experimental-strip-types --no-warnings scripts/test-summary.mjs",
@@ -32,7 +32,10 @@
     "test:api-guard-features": "node --experimental-strip-types --no-warnings scripts/test-api-guard-features.mjs",
     "test:claude-features": "node --experimental-strip-types --no-warnings scripts/test-claude-features.mjs",
     "test:ar": "node --experimental-strip-types --no-warnings scripts/test-ar.mjs",
-    "bench:ar": "node --experimental-strip-types --no-warnings scripts/bench-ar.mjs"
+    "bench:ar": "node --experimental-strip-types --no-warnings scripts/bench-ar.mjs",
+    "test:ar:browser": "node --experimental-strip-types --no-warnings scripts/test-ar-browser.mjs",
+    "test:pwa": "node scripts/test-pwa.mjs",
+    "test:pairing:browser": "node scripts/test-pairing-browser.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.3.0",

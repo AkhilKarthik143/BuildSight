@@ -72,13 +72,13 @@ Goal: make the whole project safe to run publicly, maintainable, measurable, and
 - [x] Add every new suite to `npm test`
 
 **Phase 5: Product features**
-- [ ] **Pairing (phone camera <-> laptop screen):** define `src/lib/pairing/transport.ts` interface (`createRoom`, `join(code)`, `publish`, `subscribe`); implement a local in-memory/SSE transport that works with `npm run dev` and a stubbed Azure Web PubSub transport selected by env (`WEBPUBSUB_CONNECTION_STRING`); 6-char room codes, QR display on the laptop, join page on the phone; messages: frame, step change, check result, voice transcript. Unit-test the transport and message schema with the in-memory implementation
-- [ ] **Session summary:** at end of a build (or via "I'm done" voice command in `commands.ts` with tests), generate a summary (steps completed, mistakes caught and where, time per step) from local state, shown in a panel and exportable as Markdown; pure formatter in `src/lib` with tests
-- [ ] **Typed input fallback** in `VoicePanel.tsx` for loud rooms: text box that sends through the same path as a transcribed phrase (including `commands.ts` matching)
-- [ ] **Mic level meter** in the voice pill using Web Audio `AnalyserNode`; must not break the mute-toggle and echo-avoidance behavior
-- [ ] **Offline-friendly PWA:** `manifest` + icons + minimal service worker caching the app shell and pre-read demo manual (`public/steps/**`); must not cache `/api/*`; add-to-home-screen works
-- [ ] **Accessibility pass:** labels and focus states on all controls, `aria-live` for check results and voice status, keyboard reachability of Check/mic/auto settings, `prefers-reduced-motion` disables scan/hologram animation; fix issues eslint-config-next flags
-- [ ] **Error states:** friendly UI + voice line for camera denied, mic denied, network offline, 429 from the API; each has a unit test where logic is pure
+- [x] **Pairing (phone camera <-> laptop screen):** define `src/lib/pairing/transport.ts` interface (`createRoom`, `join(code)`, `publish`, `subscribe`); implement a local in-memory/SSE transport that works with `npm run dev` and a stubbed Azure Web PubSub transport selected by env (`WEBPUBSUB_CONNECTION_STRING`); 6-char room codes, QR display on the laptop, join page on the phone; messages: frame, step change, check result, voice transcript. Unit-test the transport and message schema with the in-memory implementation
+- [x] **Session summary:** at end of a build (or via "I'm done" voice command in `commands.ts` with tests), generate a summary (steps completed, mistakes caught and where, time per step) from local state, shown in a panel and exportable as Markdown; pure formatter in `src/lib` with tests
+- [x] **Typed input fallback** in `VoicePanel.tsx` for loud rooms: text box that sends through the same path as a transcribed phrase (including `commands.ts` matching)
+- [x] **Mic level meter** in the voice pill using Web Audio `AnalyserNode`; must not break the mute-toggle and echo-avoidance behavior
+- [x] **Offline-friendly PWA:** `manifest` + icons + minimal service worker caching the app shell and pre-read demo manual (`public/steps/**`); must not cache `/api/*`; add-to-home-screen works
+- [x] **Accessibility pass:** labels and focus states on all controls, `aria-live` for check results and voice status, keyboard reachability of Check/mic/auto settings, `prefers-reduced-motion` disables scan/hologram animation; fix issues eslint-config-next flags
+- [x] **Error states:** friendly UI + voice line for camera denied, mic denied, network offline, 429 from the API; each has a unit test where logic is pure
 
 **Phase 6: Observability and cost**
 - [x] Per-route request counters and latency in `src/instrumentation.node.ts` custom metrics (only when `APPLICATIONINSIGHTS_CONNECTION_STRING` is set; no-op otherwise)
@@ -86,37 +86,37 @@ Goal: make the whole project safe to run publicly, maintainable, measurable, and
 - [x] Document dashboards/queries in README (names only, no secrets)
 
 **Phase 7: Web AR overlay (marker-anchored, browser only)**
-- [ ] Investigation first: read `CameraFeed.tsx`, `HighlightBox.tsx`, `CheckErrorOverlay.tsx`, `src/lib/issueBox.ts`, `src/components/practice/Scene.tsx` (existing three.js/AR-practice code) and write in Notes how boxes (normalized 0-1 coordinates) and the "where it goes" marker are drawn today and what breaks when the phone moves
-- [ ] Decide and log in Notes + DECISIONS.md: anchor = a printed marker sheet (4 fiducial markers at the corners of the build mat, AprilTag/ArUco family) giving a homography from mat coordinates to camera pixels. Prefer a small pure-JS detector with no native/WASM build step; if you add a dependency log name, size and license. Markerless SLAM is out of scope
-- [ ] `src/lib/ar/homography.ts`: solve a 4-point homography, project points and boxes both ways (mat <-> camera), invert, plus a low-pass pose smoother to cut jitter; pure functions, strip-types compatible
-- [ ] `src/lib/ar/tracker.ts`: interface `Tracker { update(frame): PoseResult }` with states `tracking | lost | searching`, a 3-of-4-marker partial fix, and hysteresis (N lost frames before dropping); detector adapter behind the interface so tests can inject synthetic marker corners
-- [ ] Run detection on a downscaled frame (~320 px wide) in a Web Worker so the UI thread never blocks; target >= 15 detections/s on a mid-range phone; expose measured fps in a dev-only overlay
-- [ ] Printable marker sheet at route `/ar/markers`: print-ready page at true scale (letter + A4 CSS `@page`), 4 corner markers with IDs, a scale bar so the user can verify 1:1 printing, and one line of setup instructions
-- [ ] `src/components/build/ArOverlay.tsx`: a canvas/three layer above the live camera that draws, through the current homography, (a) the step's "where it goes" marker, (b) the existing mistake boxes, (c) the part hologram cut-out next to the target location. Boxes stored in mat coordinates at check time and re-projected every frame, so they stay on the right bricks when the phone moves
-- [ ] Graceful fallback: when tracking is `lost` or `searching`, fall back to today's behavior (boxes drawn as before, with the existing "view changed" handling) and show a short hint ("Show the mat corners"); AR must never block Check build, voice, auto mode or step navigation
-- [ ] Settings toggle "AR overlay" (default off, remembered per device in localStorage with try/catch); add to the keyboard shortcuts and `aria-live` status; respect `prefers-reduced-motion`
-- [ ] Optional progressive enhancement: where `navigator.xr?.isSessionSupported('immersive-ar')` is true (Android Chrome), offer a WebXR hit-test mode to place the hologram on a detected surface; feature-detect in a pure helper with tests; no-op on iOS Safari and desktop. Skip if it destabilizes the marker path, log the reason
-- [ ] Keep 3D light: reuse existing cut-out holograms and 2D manual crops; no new 3D model assets; if any texture or model is added keep it under 200 KB each
-- [ ] `AR-QA.md` at repo root: human test checklist the agent cannot run (print at 100%, lighting, distance, tilt, marker occlusion by hands, drift over 5 minutes, iPhone Safari vs Android Chrome); the agent writes it, a human runs it
+- [x] Investigation first: read `CameraFeed.tsx`, `HighlightBox.tsx`, `CheckErrorOverlay.tsx`, `src/lib/issueBox.ts`, `src/components/practice/Scene.tsx` (existing three.js/AR-practice code) and write in Notes how boxes (normalized 0-1 coordinates) and the "where it goes" marker are drawn today and what breaks when the phone moves
+- [x] Decide and log in Notes + DECISIONS.md: anchor = a printed marker sheet (4 fiducial markers at the corners of the build mat, AprilTag/ArUco family) giving a homography from mat coordinates to camera pixels. Prefer a small pure-JS detector with no native/WASM build step; if you add a dependency log name, size and license. Markerless SLAM is out of scope
+- [x] `src/lib/ar/homography.ts`: solve a 4-point homography, project points and boxes both ways (mat <-> camera), invert, plus a low-pass pose smoother to cut jitter; pure functions, strip-types compatible
+- [x] `src/lib/ar/tracker.ts`: interface `Tracker { update(frame): PoseResult }` with states `tracking | lost | searching`, a 3-of-4-marker partial fix, and hysteresis (N lost frames before dropping); detector adapter behind the interface so tests can inject synthetic marker corners
+- [x] Run detection on a downscaled frame (~320 px wide) in a Web Worker so the UI thread never blocks; target >= 15 detections/s on a mid-range phone; expose measured fps in a dev-only overlay
+- [x] Printable marker sheet at route `/ar/markers`: print-ready page at true scale (letter + A4 CSS `@page`), 4 corner markers with IDs, a scale bar so the user can verify 1:1 printing, and one line of setup instructions
+- [x] `src/components/build/ArOverlay.tsx`: a canvas/three layer above the live camera that draws, through the current homography, (a) the step's "where it goes" marker, (b) the existing mistake boxes, (c) the part hologram cut-out next to the target location. Boxes stored in mat coordinates at check time and re-projected every frame, so they stay on the right bricks when the phone moves
+- [x] Graceful fallback: when tracking is `lost` or `searching`, fall back to today's behavior (boxes drawn as before, with the existing "view changed" handling) and show a short hint ("Show the mat corners"); AR must never block Check build, voice, auto mode or step navigation
+- [x] Settings toggle "AR overlay" (default off, remembered per device in localStorage with try/catch); add to the keyboard shortcuts and `aria-live` status; respect `prefers-reduced-motion`
+- [x] Optional progressive enhancement: where `navigator.xr?.isSessionSupported('immersive-ar')` is true (Android Chrome), offer a WebXR hit-test mode to place the hologram on a detected surface; feature-detect in a pure helper with tests; no-op on iOS Safari and desktop. Skip if it destabilizes the marker path, log the reason
+- [x] Keep 3D light: reuse existing cut-out holograms and 2D manual crops; no new 3D model assets; if any texture or model is added keep it under 200 KB each
+- [x] `AR-QA.md` at repo root: human test checklist the agent cannot run (print at 100%, lighting, distance, tilt, marker occlusion by hands, drift over 5 minutes, iPhone Safari vs Android Chrome); the agent writes it, a human runs it
 
 ### Validation
-- [ ] Run `npm run lint` and fix any issues
-- [ ] Run `npm run typecheck` and ensure zero errors
-- [ ] Run `npm test` and ensure all suites pass (6 original + new)
-- [ ] Run `npm run build` and ensure it succeeds
-- [ ] Start `npm run dev` in background; `curl -s -o /dev/null -w "%{http_code}"` on `/`, `/practice/parrot`, `/practice/pc` (expect 200); hit one API route 40x fast and confirm 429, then a valid small request succeeds after the window; open two pairing clients against the local transport and confirm a message round-trips; kill the dev server
-- [ ] `grep -rn "api.anthropic.com\|openrouter.ai\|cartesia\|webpubsub" scripts/test-*.mjs scripts/eval-check.mjs` shows only mocked references
-- [ ] `git diff main --stat` shows no do-not-touch path changed
-- [ ] Verify no regression in: `npm run test:commands`, `test:assist`, `test:auto`, `test:practice`, `test:boxes`, `test:parts`
-- [ ] Run `node --experimental-strip-types --no-warnings scripts/test-ar.mjs` and ensure all pass: homography round-trip error < 1e-6 on random quads, box projection matches known cases, smoother reduces jitter on a synthetic noisy track, tracker state machine (tracking -> lost -> searching with hysteresis, 3-of-4 partial fix), XR feature detection; add `test:ar` to `package.json` and to `npm test`
-- [ ] Run `node --experimental-strip-types --no-warnings scripts/bench-ar.mjs` (synthetic frames through the detector adapter) and record ms/frame in Notes; fail if the downscaled detection exceeds 60 ms/frame on this machine
-- [ ] With dev server running, `curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/ar/markers` returns 200, and the HTML contains 4 marker elements and the `@page` print rule
+- [x] Run `npm run lint` and fix any issues
+- [x] Run `npm run typecheck` and ensure zero errors
+- [x] Run `npm test` and ensure all suites pass (6 original + new)
+- [x] Run `npm run build` and ensure it succeeds
+- [x] Start `npm run dev` in background; `curl -s -o /dev/null -w "%{http_code}"` on `/`, `/practice/parrot`, `/practice/pc` (expect 200); hit one API route 40x fast and confirm 429, then a valid small request succeeds after the window; open two pairing clients against the local transport and confirm a message round-trips; kill the dev server
+- [x] `grep -rn "api.anthropic.com\|openrouter.ai\|cartesia\|webpubsub" scripts/test-*.mjs scripts/eval-check.mjs` shows only mocked references
+- [x] `git diff main --stat` shows no do-not-touch path changed
+- [x] Verify no regression in: `npm run test:commands`, `test:assist`, `test:auto`, `test:practice`, `test:boxes`, `test:parts`
+- [x] Run `node --experimental-strip-types --no-warnings scripts/test-ar.mjs` and ensure all pass: homography round-trip error < 1e-6 on random quads, box projection matches known cases, smoother reduces jitter on a synthetic noisy track, tracker state machine (tracking -> lost -> searching with hysteresis, 3-of-4 partial fix), XR feature detection; add `test:ar` to `package.json` and to `npm test`
+- [x] Run `node --experimental-strip-types --no-warnings scripts/bench-ar.mjs` (synthetic frames through the detector adapter) and record ms/frame in Notes; fail if the downscaled detection exceeds 60 ms/frame on this machine
+- [x] With dev server running, `curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/ar/markers` returns 200, and the HTML contains 4 marker elements and the `@page` print rule
 
 ### Cleanup
-- [ ] Remove debug code and scratch files; no new `console.log` in `src/`
-- [ ] Append a "Full-project pass" section to `DECISIONS.md` (decision, why, date) for each workstream
-- [ ] Update `.env.example` with every new env var (names, placeholder values only)
-- [ ] Final validation: `npm run lint && npm run typecheck && npm test && npm run build`
+- [x] Remove debug code and scratch files; no new `console.log` in `src/`
+- [x] Append a "Full-project pass" section to `DECISIONS.md` (decision, why, date) for each workstream
+- [x] Update `.env.example` with every new env var (names, placeholder values only)
+- [x] Final validation: `npm run lint && npm run typecheck && npm test && npm run build`
 
 ## Definition of Done
 - `.github/workflows/ci.yml` exists; lint, typecheck, test, build pass locally with the same commands
@@ -160,3 +160,14 @@ PDF rewrites use fixed www.lego.com/www.ikea.com origins and the proxy rejects n
 
 
 Baseline (spec author, 2026-10-27): `npm ci` ok (621 pkgs); `npm test` all passed; `npm run lint` clean; `tsc --noEmit` fails only on `LayoutProps` until `next typegen`, then clean; `npm run build` not yet verified.
+
+### Completion — 2026-10-30
+- Final lint, generated typecheck, all offline suites and production build passed with paid-provider credentials unset. All six original suites are unchanged from the task baseline. No new environment variables were introduced; `.env.example` remains sufficient.
+- Local dev smoke passed for `/`, both practice pages and `/ar/markers`; print HTML has four markers and the print rule. HTTP validation passed, including oversized bodies, rate limiting/refill and SSE round trips. The dev server was stopped afterward.
+- Production Playwright passed at 390×844: actual detector worker on a synthetic camera, true-scale print layout, target pin/drag and projection, three-marker tracking, loss/reacquisition, delayed-check registration, fallback, step reset, saved preference and reduced motion. A positioning toolbar initially intercepted taps; moving it above the working area fixed the regression, and the full AR test passed afterward.
+- Existing mobile regression passed: manual, camera, error boxes, auto mode, advancement, navigation, stale check rejection, pairing, summary and practice. Two-client pairing browser test passed: phone image reaches Check build, step/check/transcript feedback and camera source switching. Real browser offline shell reload and cache inspection passed; unit policy rejects API/private/pairing/RSC caching.
+- Final synthetic 320×400 detector benchmark: mean 1.66 ms, p95 2.09 ms/frame on this laptop. These are not phone measurements. Mid-range phone FPS, printed scale and physical drift remain human checks in AR-QA.md; its boxes intentionally remain unchecked.
+- Optional WebXR hit-test UI is explicitly deferred as permitted by the spec: a second placement mode would complicate and destabilize the marker workflow. Capability detection is implemented and tested. Targets are user-pinned, not inferred stud placements.
+- Provider URLs in tests occur only in mocked adapters/assertions. No paid calls were made. No new source console.log/debug code or secrets. CREDITS additions are append-only.
+- Protected-file verification uses the actual starting commit `ed5f57f`: no changes to manual/catalog data, extraction scripts, Claude settings or Azure deploy files. Comparing against the much older local `main` includes inherited team changes to those files, so the literal no-diff-to-local-main criterion is inapplicable; none were reverted or newly edited here. Local main and ar-akhil refs are unchanged.
+- Implementation checkboxes mean implemented and automatically verified where possible; they do not certify real-camera accuracy, phone installation/accessibility or production readiness. Azure transport remains the requested mock-tested stub. Existing Azure identity advisory and deployment access-control limitations remain documented.

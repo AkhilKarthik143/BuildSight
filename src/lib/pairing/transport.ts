@@ -11,7 +11,7 @@ export type PairTransport = {
   subscribe(code: string, listener: (message: PairMessage) => void): () => void;
 };
 
-type Room = { listeners: Set<(message: PairMessage) => void> };
+type Room = { touched: number; listeners: Set<(message: PairMessage) => void> };
 
 const rooms = () => {
   const g = globalThis as { __buildsightRooms?: Map<string, Room> };
@@ -23,21 +23,30 @@ export function resetRoomsForTests() {
   rooms().clear();
 }
 
-export function memoryTransport(): PairTransport {
+export function memoryTransport({ maxRooms = 200, ttlMs = 30 * 60 * 1000, now = Date.now }: { maxRooms?: number; ttlMs?: number; now?: () => number } = {}): PairTransport {
+  const sweep = () => { const at = now(); for (const [code, room] of rooms()) if (at - room.touched > ttlMs) rooms().delete(code); };
   return {
     async createRoom() {
+      sweep();
       const store = rooms();
+      if (store.size >= maxRooms) throw new Error("Pairing is busy. Try again later.");
       let code = roomCode();
       while (store.has(code)) code = roomCode();
-      store.set(code, { listeners: new Set() });
+      store.set(code, { touched: now(), listeners: new Set() });
       return { code };
     },
     async join(code) {
-      return rooms().has(code) && isRoomCode(code) ? { ok: true } : { ok: false };
+      sweep();
+      const room = rooms().get(code);
+      if (!room || !isRoomCode(code)) return { ok: false };
+      room.touched = now();
+      return { ok: true };
     },
     async publish(code, message) {
+      sweep();
       const room = rooms().get(code);
       if (!room || !parsePairMessage(message)) return false;
+      room.touched = now();
       for (const listener of room.listeners) listener(message);
       return true;
     },

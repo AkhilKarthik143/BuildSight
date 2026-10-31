@@ -12,15 +12,17 @@ import { faultCopy } from "@/lib/faults";
 import { speak, speaker } from "@/lib/speech";
 import { useCallback, useEffect, useRef } from "react";
 
+import type { ArGuide } from "./useArGuide";
 import type { BuildNavigation } from "./useBuildNavigation";
 import type { BuildState } from "./useBuildState";
-export function useBuildCheck(s: BuildState, n: BuildNavigation) {
+export function useBuildCheck(s: BuildState, n: BuildNavigation, ar: ArGuide) {
   const {
     camera: cameraRef, phase, target, previous, setCheckState, setIssuePick, checkSeq: checkSeqRef,
     advance, setAdvance, voiceDone: voiceDoneRef, muted, check, setCheck, timingRef: timingRefRef,
     watch: watchRef, step
   } = s;
   const { go } = n;
+  const { anchorFrame } = ar;
   // Checks the build against this step's manual picture. Asked for (button, Space/Enter, voice "check"): always
   // shows and speaks the result, as before. Automatic (Auto Mode): quiet unless it passes or finds a likely mistake.
   // Either way a pass (isPass) starts a cancellable move to the next step.
@@ -39,6 +41,7 @@ export function useBuildCheck(s: BuildState, n: BuildNavigation) {
       watchRef.current.misses = 0;
       watchRef.current.notYet = 0;
     }
+    const anchor = anchorFrame(frame);
     const seq = ++checkSeqRef.current;
     setAdvance(null);
     setCheck({ state: "checking", auto: automatic });
@@ -50,6 +53,7 @@ export function useBuildCheck(s: BuildState, n: BuildNavigation) {
         body: JSON.stringify({ frame, expected: target, previous: previous ?? undefined, instruction: step.instruction, watchFor: step.watchFor, parts: partLines(step.parts) }),
       });
       const data = await res.json();
+      const arPose = await anchor;
       if(seq !== checkSeqRef.current) return null; // the step changed or a newer check started
       if (res.status === 429) {
         const fault = faultCopy("rate-limited");
@@ -66,7 +70,7 @@ export function useBuildCheck(s: BuildState, n: BuildNavigation) {
       const loud = !automatic || pass || (verdict === "fix" && result.confidence >= AUTO_SPEAK_FIX_CONFIDENCE);
       voiceDoneRef.current = Promise.resolve();
       if(loud) {
-        setCheck({ state: "result", result, frame, id: seq, sample });
+        setCheck({ state: "result", result, frame, id: seq, sample, arPose });
         // A mistake is said with where it is ("The red 2x4 near the top left is rotated."), since the builder's eyes
         // are on the bricks; everything else says Claude's own sentence, as before.
         const spoken = verdict === "fix" ? spokenIssues(result.issues) : result.say;
@@ -82,7 +86,7 @@ export function useBuildCheck(s: BuildState, n: BuildNavigation) {
       else setCheck({ state: "error", message: e instanceof Error && e.message ? e.message : "Check failed." });
       return null;
     }
-  }, [step, target, check?.state, cameraRef, checkSeqRef, setAdvance, setCheck, setIssuePick, watchRef, previous, voiceDoneRef, timingRefRef, muted, setCheckState]);
+  }, [anchorFrame, step, target, check?.state, cameraRef, checkSeqRef, setAdvance, setCheck, setIssuePick, watchRef, previous, voiceDoneRef, timingRefRef, muted, setCheckState]);
 
   // The pending move to the next step. Auto Mode waits for the "verified" line to finish (the mic is off while it
   // speaks), then gives 3 s to cancel: the Cancel button, saying "stop"/"cancel"/"wait", Back or Escape. A manual check

@@ -1,4 +1,4 @@
-import { convexQuad, createPoseSmoother, project, projectQuad, solveHomography, type Homography, type Point, type Quad } from './homography.ts';
+import { convexQuad, createPoseSmoother, project, projectQuad, solveHomography, type Homography, type Point } from './homography.ts';
 import { markerQuad, MAT_QUAD } from './mat.ts';
 import type { Detector, Frame, Marker } from './detector.ts';
 export type PoseResult = {state:'tracking'|'lost'|'searching'; pose:Homography|null; raw:Homography|null; visible:number; partial:boolean; fresh:boolean; timestamp:number};
@@ -40,10 +40,4 @@ export function createTracker(detector:Detector, lostFrames=3):Tracker {
     }
     return result;
   }};
-}
-export function anchorBoxes(pose:Homography|null, boxes:Quad[]):Quad[] | null {
-  // Kept in the UI state only; no geometry is ever sent to a model or saved as progress.
-  if(!pose) return null;
-  const out=boxes.map(q=>projectQuad(pose,q));
-  return out.every(q=>q!==null)?out as Quad[]:null;
 }
