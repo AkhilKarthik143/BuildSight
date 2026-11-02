@@ -10,7 +10,7 @@ Cal Hacks 13.0. Decisions and the reasons behind the UX live in [DECISIONS.md](D
 2. The build screen shows the current step's picture, the parts as holograms, and a **Check build** button.
 3. The camera watches the table. In Auto Mode it checks when the scene changes and then holds still. A pass moves on; a mistake is boxed on the photo and spoken aloud.
 4. Talk with the mic (mute toggle, or the M key), or type the same phrase in the text box. "Next", "back", and "go to step 8" are instant. Other questions go to Claude with the current frame.
-5. Open Pair to preview a phone camera through a room code or QR. The pairing preview is experimental; Check build still uses the local camera.
+5. Open Build options → Pair a phone camera. Join from the phone, then choose **Use phone camera** on the laptop. Check build and AR now use that camera; step/check updates return to the phone. The local transport sends preview frames, not full-rate video.
 
 ## Architecture
 
@@ -119,3 +119,37 @@ Hackathon project. Third-party photos on the display-only hub categories are lis
 ## Combined hardening validation
 
 The post-event maintenance work is consolidated on `improve/full-project`. See [hardening validation](docs/hardening-validation.md) and [task checklist](BUILDSIGHT-TASKS.md). `main` and the upstream repository are unchanged.
+
+## Camera placement suggestions
+
+In a build, turn on **AR overlay**, choose the part, and tap **Show placement**. This compares a camera snapshot with the active manual step and draws an extra layer on the live video: a cyan pickup box when the loose part is visible, a connecting arrow, and an amber suggested landing area in the part's color. **Adjust suggestion** lets you drag, rotate 90°, or nudge it. The step card collapses to leave room for the camera; it remains expandable.
+
+No printed mat is required for a snapshot suggestion. Keep the camera still: a changed view hides it until you **Refresh placement**. With a tracked mat, the target follows the mat plane. The pickup box is snapshot-only and hides when the scene changes. Suggestions expire after one minute and clear on step/source changes, AR off or Check build. Placement controls never mark a step done.
+
+This is approximate visual guidance, **not exact stud registration or a verified fit**. Stud dots use the part metadata for recognition, not a physical scale measurement. The model must clearly see the assembly/attachment area before any target is drawn. Real-photo placement accuracy still needs human testing.
+
+Uses the existing server `ANTHROPIC_API_KEY` or `OPENROUTER_API_KEY`; no new dependencies or key entry in the browser. `/api/ar-guide` inherits input/body limits, rate limits and the optional daily Claude ceiling. One suggestion per tap, one pending suggestion at a time, no per-frame model calls. Check build cancels the browser's pending suggestion; a provider request already in progress can still incur usage.
+
+- `npm run test:camera-placement`: conservative response parsing, geometry, input validation and quota coverage.
+- `npm run test:camera-placement:browser`: mocked suggestions with a simulated camera at 390×844, dragging, rotation, motion invalidation, stale responses and check priority.
+
+## Marker AR overlay
+
+1. Open `/ar/markers` and print the mat on A4 or US Letter at **100% / actual size**. Check its 50 mm scale bar with a ruler.
+2. Keep the mat flat and the build fixed inside it. In the build screen turn on **AR overlay** (keyboard **G**). Show all four corners to acquire tracking; three visible markers can maintain it.
+3. Choose **Pin target** and tap/drag the spot from the manual, then **Done positioning**. Keyboard users can place it at the mat center and nudge it. Targets belong only to the current step and never complete a step.
+4. Check build normally. With tracking available, error boxes register to the exact checked image and follow the mat as the camera moves. Losing tracking restores the existing camera-motion fallback and shows a short hint.
+
+This is a **2D, marker-anchored guide**. “Your placement” is user-positioned: manual-image coordinates are not physical stud coordinates. Cutouts are visual references, not scale-accurate 3D models. The plane cannot compensate for tall bricks or a build moved independently of the mat. The existing AR Practice lessons remain separate under Build options.
+
+The detector is pinned `js-aruco2@2.0.0` (MIT-licensed aruco/cv modules, about 43 KB source, no transitive dependencies, native code, WASM or CDN). It runs on 320-pixel-wide frames in a worker, with bounded work and suspension in background tabs. Local synthetic benchmark: ~2.7 ms average / ~3.3 ms p95 per 320×400 frame; **not a phone performance result**. The development overlay reports observed detector FPS. Optional WebXR placement is deferred; capability detection is tested.
+
+- `npm run test:ar`: deterministic geometry/state tests and actual detection on synthetic printed markers.
+- `npm run bench:ar`: offline detector timing; fails if p95 exceeds 60 ms/frame on this machine.
+- `npm run test:ar:browser`: real worker with synthetic camera at 390×844; requires local server at port 3102 and Playwright Chromium.
+- `npm run test:pairing:browser`: two local clients, remote-frame checks and notifications; paid endpoints mocked.
+- `npm run test:pwa`: cache policy (never API/pairing/private responses).
+
+For browser scripts, run `npx playwright install chromium` once or set `CHROME_PATH` to a local Chrome executable. Unit tests/benchmark never use the network; HTTP/browser scripts only use localhost. **[AR-QA.md](AR-QA.md)** lists real-device, print, drift, lighting and accessibility checks still requiring a human.
+
+Pairing rooms use cryptographically generated codes, expire after 30 idle minutes, and are capped at 200 per process. They are local development sessions, not account authentication. Azure PubSub is still a mock-tested stub. Session summaries separately count steps visited and steps verified complete. Offline caching includes initial app JS/CSS and the pre-read demo; further pages/chunks are saved as visited. No new environment variables are needed.

@@ -14,6 +14,7 @@ export type RouteId =
   | "extract"
   | "locate"
   | "where-am-i"
+  | "ar-guide"
   | "vision"
   | "tts"
   | "pair"
@@ -32,13 +33,14 @@ export const ROUTE_LIMITS: Record<RouteId, Limit> = {
   extract: { capacity: 30, refillPerSec: 1 },
   locate: { capacity: 24, refillPerSec: 2 },
   "where-am-i": { capacity: 6, refillPerSec: 1 / 10 },
+  "ar-guide": { capacity: 6, refillPerSec: 1 / 10 },
   vision: { capacity: 12, refillPerSec: 1 / 4 },
   tts: { capacity: 30, refillPerSec: 1 },
 };
 export const RATE_LIMITS = ROUTE_LIMITS;
 export type ApiRoute = RouteId;
 
-export const CLAUDE_ROUTES: ReadonlySet<RouteId> = new Set(["check", "assist", "extract", "locate", "where-am-i", "vision"]);
+export const CLAUDE_ROUTES: ReadonlySet<RouteId> = new Set(["check", "assist", "extract", "locate", "where-am-i", "vision", "ar-guide"]);
 
 export type Bucket = { tokens: number; updated: number };
 export type LimitStore = Map<string, Bucket>;

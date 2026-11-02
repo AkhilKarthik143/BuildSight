@@ -58,10 +58,12 @@ try{
  await page.getByRole('button',{name:'Go to step 8',exact:true}).first().click();
  await page.waitForTimeout(300);assert.ok(await heading.textContent());
  // Fork-only features must still work after the controller split.
+ await page.getByLabel('Build options',{exact:true}).click();
  await page.getByRole('button',{name:'Show the build summary',exact:true}).click();
  await page.getByRole('dialog',{name:'Build summary',exact:true}).waitFor();
  assert.match(await page.getByRole('dialog',{name:'Build summary',exact:true}).textContent(),/Parrot test/);
  await page.getByRole('button',{name:'Close summary',exact:true}).click();
+ await page.getByLabel('Build options',{exact:true}).click();
  await page.getByRole('button',{name:'Pair a phone camera',exact:true}).click();
  await page.getByRole('dialog',{name:'Pair a phone',exact:true}).waitFor();
  await page.getByLabel('Room code A B C 2 3 4').waitFor();
@@ -71,10 +73,12 @@ try{
  await page.getByRole('dialog',{name:'Build summary',exact:true}).waitFor();
  await page.getByRole('button',{name:'Close summary',exact:true}).click();
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=390),true,'no horizontal overflow');
+ await page.getByLabel('Build options',{exact:true}).click();
  for(const label of ['Pair a phone camera','Show the build summary','Restart from step 1']) {
   const box=await page.getByRole('button',{name:label,exact:true}).boundingBox();
   assert.ok(box && box.x>=0 && box.x+box.width<=390,`${label} fits the phone`);
  }
+ await page.getByLabel('Build options',{exact:true}).click();
  await page.screenshot({path:'/tmp/buildsight-hardening-mobile.png'});
  await page.goto(base+'/practice/parrot');await page.waitForTimeout(500);
  assert.equal(await page.title(),'Practice in AR · BuildSight');

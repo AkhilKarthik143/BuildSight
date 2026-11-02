@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import vm from 'node:vm';
+import {readFileSync} from 'node:fs';
+const sandbox=vm.createContext({URL,Request,self:{location:{origin:'https://local.test'},addEventListener(){}},fetch(){throw new Error('No network in tests');}});
+vm.runInContext(readFileSync(new URL('../public/sw.js',import.meta.url),'utf8'),sandbox);
+for(const path of ['/','/practice/parrot','/ar/markers','/steps/6455750.json','/_next/static/a.js'])assert.equal(vm.runInContext(`cacheable(new Request('https://local.test${path}'))`,sandbox),true);
+for(const path of ['/api/check','/api/pair/events?code=ABC234','/pair/ABC234','/build/private'])assert.equal(vm.runInContext(`cacheable(new Request('https://local.test${path}'))`,sandbox),false);
+assert.equal(vm.runInContext("cacheable(new Request('https://external.test/steps/a.jpg'))",sandbox),false);
+assert.equal(vm.runInContext("cacheable(new Request('https://local.test/',{headers:{RSC:'1'}}))",sandbox),false);
+assert.equal(vm.runInContext("cacheable(new Request('https://local.test/',{method:'POST'}))",sandbox),false);
+console.log('PWA policy passed: public assets only; excludes paid APIs, pairing, private routes, POST and RSC.');

@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useState } from "react";
 import { boxLocation, checkVerdict } from "@/lib/issueBox";
-import { emptySession, formatSessionMarkdown, noteMistake, noteStep, type SessionState } from "@/lib/sessionSummary";
+import { emptySession, formatSessionMarkdown, noteMistake, noteStep, noteVerified, type SessionState } from "@/lib/sessionSummary";
 import { stepLabel } from "@/lib/stepLabels";
 import type { BuildState } from "./useBuildState";
 
@@ -12,8 +12,8 @@ export function useBuildSummary({ manual, step, stepKey, check, phase }: BuildSt
   const [trackedCheck, setTrackedCheck] = useState<number | null>(null);
   const [seenPhase, setSeenPhase] = useState(phase.kind);
   const title = manual?.title || "Build";
-  const stepChanged = Boolean(step) && trackedStep !== stepKey;
-  const checkChanged = check?.state === "result" && checkVerdict(check.result) === "fix" && trackedCheck !== check.id;
+  const stepChanged = phase.kind === "ready" && Boolean(step) && trackedStep !== stepKey;
+  const checkChanged = check?.state === "result" && trackedCheck !== check.id;
   if (session.title !== title || stepChanged || checkChanged) {
     if (stepChanged) setTrackedStep(stepKey);
     if (checkChanged && check?.state === "result") setTrackedCheck(check.id);
@@ -21,6 +21,7 @@ export function useBuildSummary({ manual, step, stepKey, check, phase }: BuildSt
       let next = s.title === title ? s : { ...s, title };
       if (stepChanged && step) next = noteStep(next, stepKey, stepLabel(step));
       if (checkChanged && check?.state === "result") {
+        if (checkVerdict(check.result) === "pass") next = noteVerified(next, stepKey);
         next = check.result.issues.reduce(
           (acc, issue) => noteMistake(acc, { part: issue.part, where: issue.box ? boxLocation(issue.box) : "", problem: issue.problem }),
           next,

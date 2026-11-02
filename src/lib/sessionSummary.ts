@@ -5,12 +5,13 @@ export type SessionStep = { key: string; label: string; startedAt: number; ended
 
 export type SessionState = {
   title: string;
+  verified: string[];
   steps: SessionStep[];
   open: { key: string; label: string; startedAt: number; mistakes: SessionMistake[] } | null;
 };
 
 export function emptySession(title: string): SessionState {
-  return { title, steps: [], open: null };
+  return { title, verified: [], steps: [], open: null };
 }
 
 export function noteStep(state: SessionState, key: string, label: string, now?: number): SessionState {
@@ -25,9 +26,13 @@ export function noteMistake(state: SessionState, mistake: SessionMistake): Sessi
   return { ...state, open: { ...state.open, mistakes: [...state.open.mistakes, mistake] } };
 }
 
+export function noteVerified(state: SessionState, key: string): SessionState {
+  return state.verified.includes(key) ? state : { ...state, verified: [...state.verified, key] };
+}
+
 export function closeSession(state: SessionState, now: number): SessionState {
   if (!state.open) return state;
-  return { title: state.title, steps: [...state.steps, { ...state.open, endedAt: now }], open: null };
+  return { ...state, steps: [...state.steps, { ...state.open, endedAt: now }], open: null };
 }
 
 function clock(ms: number): string {
@@ -43,7 +48,7 @@ export function formatSessionMarkdown(state: SessionState, now?: number): string
   const lines = [
     `# ${closed.title || "Build"} summary`,
     "",
-    `${closed.steps.length} step${closed.steps.length === 1 ? "" : "s"} · ${mistakes} mistake${mistakes === 1 ? "" : "s"} caught`,
+    `${closed.steps.length} step${closed.steps.length === 1 ? "" : "s"} visited · ${closed.verified.length} verified complete · ${mistakes} mistake${mistakes === 1 ? "" : "s"} caught`,
     "",
   ];
   if (!closed.steps.length) lines.push("No steps recorded.");

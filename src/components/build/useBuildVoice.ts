@@ -18,7 +18,7 @@ import type { BuildCheck } from "./useBuildCheck";
 import type { BuildNavigation } from "./useBuildNavigation";
 import type { BuildRecognition } from "./useBuildRecognition";
 import type { BuildState } from "./useBuildState";
-export function useBuildVoice(s: BuildState, n: BuildNavigation, c: BuildCheck, r: BuildRecognition, openSummary: () => void) {
+export function useBuildVoice(s: BuildState, n: BuildNavigation, c: BuildCheck, r: BuildRecognition, openSummary: () => void, toggleAr: () => void) {
   const { phase, setAdvance, muted, zoomOpen, stepKey, setSubsteps, photoOpen, step } = s;
   const { go, speakStep, goToStep } = n;
   const { runCheck, pending } = c;
@@ -104,6 +104,7 @@ export function useBuildVoice(s: BuildState, n: BuildNavigation, c: BuildCheck, 
     const onKey = (e: KeyboardEvent) => {
       if(zoomOpen || photoOpen) return; // the zoom viewer handles its own keys
       if(e.target instanceof HTMLElement && e.target.closest("button, input, textarea")) return; // a focused button handles its own Enter/Space
+      if(e.key === "g" || e.key === "G") toggleAr();
       if(e.key === "a" || e.key === "A") setAutoModeStored(!readAutoMode());
       if(e.key === "Escape") setAdvance(null);
       if(e.key === "ArrowRight") go(1);
@@ -115,7 +116,7 @@ export function useBuildVoice(s: BuildState, n: BuildNavigation, c: BuildCheck, 
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [go, runCheck, zoomOpen, photoOpen, setAdvance]);
+  }, [go, runCheck, zoomOpen, photoOpen, setAdvance, toggleAr]);
 
   return { onAction, onCommand };
 }

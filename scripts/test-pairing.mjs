@@ -77,4 +77,18 @@ check("qr golden row", row(0) === "111111100111001111111");
 check("qr finder", row(0).startsWith("1111111") && row(20).startsWith("1111111"));
 
 console.log(failed ? `\n${failed} failed` : "\npairing tests passed");
+// Bounded room storage: active rooms survive pressure, abandoned rooms expire.
+resetRoomsForTests();
+let time = 0;
+const bounded = memoryTransport({ maxRooms: 2, ttlMs: 1000, now: () => time });
+const firstRoom = await bounded.createRoom();
+await bounded.createRoom();
+let capped = false;
+try { await bounded.createRoom(); } catch { capped = true; }
+check("room capacity enforced", capped);
+time = 1001;
+check("expired room cannot join", !(await bounded.join(firstRoom.code)).ok);
+check("expired room makes room", !!(await bounded.createRoom()).code);
+resetRoomsForTests();
+
 if (failed) process.exit(1);

@@ -27,3 +27,7 @@ Each one was downloaded once, cropped to a square and saved as WebP in `public/i
 | First Aid: Build a first-aid kit | `aid/build-a-first-aid-kit.webp` | Mat Napo | https://unsplash.com/photos/open-red-medical-bag-with-supplies-MaKsx8JNbiI |
 | First Aid: Use an AED | `aid/use-an-aed.webp` | Frederick Shaw | https://unsplash.com/photos/person-practicing-cpr-on-a-training-dummy-E2JjBMyxBVw |
 | First Aid: Put on PPE | `aid/put-on-ppe.webp` | Jan Kopřiva | https://unsplash.com/photos/a-person-wearing-a-white-suit-and-blue-gloves-EXWhFRxYlj8 |
+
+## Marker tracking
+
+Marker detection uses [js-aruco2](https://github.com/damianofalcioni/js-aruco2), pinned at 2.0.0. Used aruco.js/cv.js carry MIT notices, copyright Damiano Falcioni / Juan Mellado. The package LICENSE.txt includes upstream and unused POSIT/SVD notices; those modules are not imported. Generated marker patterns use the ARUCO_MIP_36h12 dictionary. No additional model/texture assets were added.

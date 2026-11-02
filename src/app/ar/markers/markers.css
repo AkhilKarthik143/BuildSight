@@ -1,0 +1,24 @@
+@page { size: A4 portrait; margin: 10mm; }
+.marker-page { padding: 32px 20px; max-width: 860px; margin: auto; }
+.marker-sheet { width: 180mm; margin: 32px auto 0; background: white; color: #111; break-inside: avoid; }
+.marker-title { height: 10mm; display: flex; align-items: center; justify-content: space-between; font: bold 11pt sans-serif; }
+.marker-title span { font: 8pt sans-serif; }
+.marker-mat { position: relative; background: white; border: 0; outline: .2mm solid #ccc; }
+.mat-marker { position: absolute; background: white; outline: 3mm solid white; }
+.mat-marker svg { display: block; width: 100%; height: 100%; shape-rendering: crispEdges; }
+.mat-marker span { position: absolute; top: 100%; left: 0; right: 0; text-align: center; padding-top: 1mm; font: 7pt monospace; }
+.mat-workspace { position: absolute; left: 40mm; top: 44mm; width: 100mm; height: 132mm; border: .2mm dashed #aaa; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3mm; color: #666; font: 8pt sans-serif; }
+.mat-workspace strong { font: bold 11pt sans-serif; letter-spacing: .5mm; }
+.mat-scale { position: absolute; bottom: 8mm; left: 65mm; font: 7pt sans-serif; text-align: center; width: 50mm; }
+.mat-scale i { display: block; height: 2mm; border: .4mm solid black; border-top: 0; width: 50mm; margin-bottom: 2mm; }
+.marker-footer { margin: 0; padding-top: 3mm; font: 8pt sans-serif; }
+@media screen and (max-width: 740px) {
+ .marker-sheet { zoom: .48; }
+ .marker-page { padding: 24px 16px; }
+}
+@media print {
+ html, body { background: white !important; color: black !important; }
+ .marker-page { padding: 0; margin: 0; max-width: none; }
+ .marker-screen { display: none !important; }
+ .marker-sheet { margin: 0 auto; zoom: 1; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+}
