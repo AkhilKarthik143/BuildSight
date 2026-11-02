@@ -1,5 +1,7 @@
 "use client";
 import Link from 'next/link';
+import CameraPlacementLayer from './CameraPlacementLayer';
+import { moveQuad, rotateQuad } from '@/lib/ar/placement';
 import { useEffect, useRef, useState } from 'react';
 import { boxQuad, coverTransform, invert, project, projectQuad, type Point, type Quad } from '@/lib/ar/homography';
 import { onMat } from '@/lib/ar/mat';
@@ -19,12 +21,15 @@ function drawCutout(ctx:CanvasRenderingContext2D,image:HTMLImageElement,p:Quad){
   ctx.globalAlpha=.7;ctx.drawImage(image,0,0);ctx.restore();
  }
 }
-type Props={model:Pick<BuildModel,'ar'|'camera'|'check'|'showBoxes'|'issuePick'|'step'|'holoItems'|'phase'>};
+type Props={model:Pick<BuildModel,'ar'|'camera'|'check'|'showBoxes'|'issuePick'|'step'|'holoItems'|'phase'|'placement'>};
 export default function ArOverlay({model}:Props){
- const {ar,camera:cameraRef,check,showBoxes,issuePick,step,holoItems,phase}=model;
+ const {ar,camera:cameraRef,check,showBoxes,issuePick,step,holoItems,phase,placement}=model;
  const canvasRef=useRef<HTMLCanvasElement>(null);
  const [pin,setPin]=useState<Point|null>(null),[placing,setPlacing]=useState(false),[size,setSize]=useState({w:0,h:0});
- const [piece,setPiece]=useState(0);
+ const [piece,setPiece]=useState(0),[adjusting,setAdjusting]=useState(false);
+ const suggestion=placement.state;
+ const suggestionVisible=suggestion?.status==='ready'&&!suggestion.stale&&(!suggestion.anchored||ar.pose.state==='tracking');
+ const editing=placing||(adjusting&&suggestionVisible);
  const imageRef=useRef<HTMLImageElement|null>(null);
  const cut=holoItems?.[piece]?.cut?.image;
  const tracking=ar.enabled&&ar.pose.state==='tracking'&&!!ar.pose.pose;
@@ -63,11 +68,28 @@ export default function ArOverlay({model}:Props){
   if(mat&&onMat(mat))setPin(mat);
  }
  return <>
+  <CameraPlacementLayer model={model} adjusting={adjusting&&!!suggestionVisible} />
   <canvas ref={canvasRef} data-ar-overlay data-ar-anchored-issues={tracking&&check?.state==='result'&&checkVerdict(check.result)==='fix'&&check.arPose?issueMarkers(check.result.issues).length:0} data-ar-state={ar.enabled?ar.pose.state:'off'} data-ar-pin={pin?`${pin.x.toFixed(2)},${pin.y.toFixed(2)}`:''} aria-label="Marker anchored 2D guide" className={`absolute inset-0 z-[8] h-full w-full ${placing&&tracking?'touch-none':'pointer-events-none'}`} onPointerDown={e=>{if(!placing)return;e.currentTarget.setPointerCapture(e.pointerId);setAt(e.clientX,e.clientY);}} onPointerMove={e=>{if(e.currentTarget.hasPointerCapture(e.pointerId))setAt(e.clientX,e.clientY);}} onPointerUp={e=>{if(e.currentTarget.hasPointerCapture(e.pointerId))e.currentTarget.releasePointerCapture(e.pointerId);}}/>
-  {ar.enabled&&<section aria-label="AR overlay controls" className={`absolute left-3 ${placing?'right-3 top-14 z-[25]':'right-[10.5rem] top-[15.5rem] z-20'} rounded-2xl border border-sky-200/20 bg-ink/95 p-3 shadow-xl sm:left-6 sm:right-auto sm:top-24 sm:w-72`}>
-   <div className="flex items-start justify-between gap-3"><div><p className="text-[10px] font-semibold uppercase tracking-widest text-holo">2D guide</p><p className="mt-1 text-sm font-semibold" role="status">{ar.error?'Tracking unavailable':tracking?(ar.pose.partial?'Mat tracked · one corner covered':'Mat tracked'):'Show the mat corners'}</p></div><Link href="/ar/markers" target="_blank" rel="noopener" className="shrink-0 rounded-lg border border-white/20 px-2.5 py-2 text-xs text-sky-200">Print ↗</Link></div>
-   <p className={`mt-1 text-xs leading-relaxed text-white/60 ${pin&&!placing&&tracking?'hidden':''}`}>{ar.error?'Check build still works. Try turning AR off and on.':tracking?(placing?'Tap or drag on the mat to position your target. This does not complete the step.':pin?'Your target stays on the mat. Keep the build fixed on the paper.':'Pin the spot from the manual. Placement is chosen by you, not detected.'): 'Lay the mat flat and show all four markers. Check build works while tracking is unavailable.'}</p>
-   {tracking&&phase.kind==='ready'&&<div className="mt-2 flex flex-wrap items-center gap-2"><button onClick={()=>setPlacing(v=>!v)} aria-pressed={placing} className="rounded-lg bg-holo px-3 py-2 text-xs font-semibold text-ink">{placing?'Done positioning':pin?'Adjust target':'Pin target'}</button>{pin&&<button onClick={()=>{setPin(null);setPlacing(false);}} className="rounded-lg bg-white/10 px-3 py-2 text-xs">Clear</button>}{placing&&(step?.parts.length??0)>1&&<select aria-label="AR target part" value={piece} onChange={e=>setPiece(Number(e.target.value))} className="min-w-0 max-w-36 rounded-lg bg-ink px-2 py-2 text-xs">{step?.parts.map((p,i)=><option value={i} key={i}>{i+1}. {p.name}</option>)}</select>}</div>}
+  {ar.enabled&&<section aria-label="AR overlay controls" className={`absolute left-3 ${editing?'right-3 top-14 z-[25]':suggestion?'right-3 bottom-[7rem] z-20 sm:bottom-auto':'right-[10.5rem] top-[15.5rem] z-20'} rounded-2xl border border-sky-200/20 bg-ink/95 p-3 shadow-xl sm:left-6 sm:right-auto sm:top-24 sm:w-72`}>
+   <div className="flex items-start justify-between gap-3"><div><p className="text-[10px] font-semibold uppercase tracking-widest text-holo">Camera placement · 2D</p><p className="mt-1 text-sm font-semibold" role="status">{suggestion?(step?.parts[piece]?.name||'Placement suggestion'):ar.error?'Tracking unavailable':tracking?(ar.pose.partial?'Mat tracked · one corner covered':'Mat tracked'):'See where it goes'}</p></div>{!suggestion&&<Link href="/ar/markers" target="_blank" rel="noopener" className="shrink-0 rounded-lg border border-white/20 px-2.5 py-2 text-xs text-sky-200">Print ↗</Link>}</div>
+   {phase.kind==='ready'&&!pin&&!placing&&<div className="mt-2 space-y-2">
+    {!suggestion&&<p className="text-xs leading-relaxed text-white/65">Show your build and the loose part. Get a suggested spot directly on the camera.</p>}
+    {(step?.parts.length??0)>1&&!placing&&suggestion?.status!=='ready'&&<select aria-label="Part to place" value={piece} onChange={e=>{setPiece(Number(e.target.value));placement.cancel();setAdjusting(false);setPin(null);}} className="w-full rounded-lg border border-white/15 bg-ink p-2 text-xs">{step?.parts.map((p,i)=><option key={i} value={i}>{p.name}</option>)}</select>}
+    {suggestion?.status!=='ready'&&(<button disabled={suggestion?.status==='loading'||check?.state==='checking'} onClick={()=>{setPin(null);setPlacing(false);setAdjusting(false);void placement.request(piece);}} className="min-h-10 w-full rounded-lg bg-holo px-3 py-2 text-xs font-semibold text-ink transition-colors hover:bg-sky-200 disabled:opacity-50">{suggestion?.status==='loading'?'Finding placement…':suggestion?'Refresh placement':'Show placement'}</button>)}
+    {suggestion&&<p role="status" className="text-xs leading-relaxed text-white/80">{suggestion.stale?'View changed — refresh the placement.':suggestion.anchored&&!tracking?'Show the mat corners to restore the guide.':suggestion.message}</p>}
+    {suggestion?.status==='ready'&&<p className="text-[10px] leading-relaxed text-amber-200">Approximate · {suggestion.anchored?'follows the mat':'keep the camera still'}. Confirm the fit before placing.</p>}
+    {suggestion?.status==='ready'&&<div className="flex flex-wrap items-center gap-2">
+     <button className="rounded-lg bg-holo px-3 py-2 text-xs font-semibold text-ink" onClick={()=>{setAdjusting(false);void placement.request(piece);}}>Refresh placement</button>
+     {suggestionVisible&&<>
+     <button className="rounded-lg bg-white/10 px-3 py-2 text-xs" aria-pressed={adjusting} onClick={()=>setAdjusting(v=>!v)}>{adjusting?'Done adjusting':'Adjust suggestion'}</button>
+     {adjusting&&suggestion?.quad&&<><button className="rounded-lg bg-white/10 px-3 py-2 text-xs" onClick={()=>placement.adjust(rotateQuad(suggestion.quad!))}>Rotate 90°</button>{[['←',-1,0],['↑',0,-1],['↓',0,1],['→',1,0]].map(([label,x,y])=><button key={label} aria-label={`Nudge suggestion ${label}`} className="h-9 w-9 rounded-lg bg-white/10" onClick={()=>placement.adjust(moveQuad(suggestion.quad!,Number(x)*(suggestion.anchored?1:.005),Number(y)*(suggestion.anchored?1:.005)))}>{label}</button>)}</>}
+     </>}
+     <button aria-label="Hide suggestion" className="px-2 py-2 text-xs text-white/60" onClick={()=>{placement.cancel();setAdjusting(false);}}>Hide</button>
+    </div>}
+    {suggestion&&suggestion.status!=='ready'&&<button className="text-xs text-white/60 underline underline-offset-4" onClick={()=>{placement.cancel();setAdjusting(false);}}>Hide suggestion</button>}
+   </div>}
+   {!suggestion&&!pin&&<p className="mt-2 text-[10px] leading-relaxed text-white/50">{tracking?'Mat tracked. You can also pin a target yourself.':'Optional: print the mat to keep targets anchored as you move.'}</p>}
+   {!suggestion&&tracking&&phase.kind==='ready'&&<div className="mt-2 flex flex-wrap items-center gap-2"><button onClick={()=>{placement.cancel();setPlacing(v=>!v);}} aria-pressed={placing} className="rounded-lg bg-holo px-3 py-2 text-xs font-semibold text-ink">{placing?'Done positioning':pin?'Adjust target':'Pin target'}</button>{pin&&<button onClick={()=>{setPin(null);setPlacing(false);}} className="rounded-lg bg-white/10 px-3 py-2 text-xs">Clear</button>}{placing&&(step?.parts.length??0)>1&&<select aria-label="AR target part" value={piece} onChange={e=>setPiece(Number(e.target.value))} className="min-w-0 max-w-36 rounded-lg bg-ink px-2 py-2 text-xs">{step?.parts.map((p,i)=><option value={i} key={i}>{i+1}. {p.name}</option>)}</select>}</div>}
    {placing&&!pin&&tracking&&<button onClick={()=>setPin({x:90,y:110})} className="mt-2 rounded-lg border border-white/20 px-3 py-2 text-xs">Place at mat center</button>}
    {placing&&pin&&<div className="mt-2 flex items-center gap-1" aria-label="Nudge placement"><span className="mr-1 text-xs text-white/50">1 mm</span>{[["←",-1,0],["↑",0,-1],["↓",0,1],["→",1,0]].map(([label,x,y])=><button key={label} aria-label={`Nudge target ${label}`} onClick={()=>{const next={x:pin.x+Number(x),y:pin.y+Number(y)};if(onMat(next))setPin(next);}} className="h-8 w-8 rounded-lg bg-white/10 text-sm">{label}</button>)}</div>}
    {process.env.NODE_ENV==='development'&&<p className="mt-1 font-mono text-[10px] text-white/40">Detector {ar.fps.toFixed(1)} fps · {ar.pose.visible}/4 markers</p>}

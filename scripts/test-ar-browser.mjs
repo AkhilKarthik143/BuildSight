@@ -24,6 +24,7 @@ await page.route('**/*',async route=>{
   checks++;await new Promise(resolve=>release=resolve);
   return route.fulfill({json:{can_see:true,step_complete:false,confidence:.95,say:'Turn the brick.',issues:[{part:'red brick',problem:'rotated',fix:'Turn it.',kind:'orientation',box:{x:.35,y:.45,w:.1,h:.1}}]}});
  }
+ if(url.pathname==='/api/ar-guide')return route.fulfill({json:{canSee:true,confidence:.9,target:{x:.55,y:.5,w:.08,h:.08},source:null,instruction:'Place the part on the base.'}});
  if(url.pathname==='/api/locate')return route.fulfill({json:{callout:null,placed:null}});
  if(url.pathname.startsWith('/api/'))return route.fulfill({status:503,json:{error:'Offline test'}});
  return route.continue();
@@ -45,6 +46,19 @@ try{
  await page.getByRole('button',{name:'Voice on',exact:true}).click();const heading=await page.locator('h1').textContent();
  assert.equal(await page.getByRole('button',{name:'AR overlay',exact:true}).getAttribute('aria-pressed'),'false');
  await page.getByRole('button',{name:'AR overlay',exact:true}).click();await tracking();
+ const suggestion=page.locator('[data-camera-placement]');
+ await page.getByRole('button',{name:'Show placement',exact:true}).click();
+ await page.waitForFunction(()=>document.querySelector('[data-camera-placement]')?.getAttribute('data-placement-visible')==='true');
+ assert.equal(await suggestion.getAttribute('data-placement-mode'),'mat');
+ await page.evaluate(()=>window.__arFrame=1);await page.waitForTimeout(600);
+ const suggestionOld=solveHomography(MAT_QUAD,DEFAULT_QUAD.map(p=>({x:p.x/320,y:p.y/400}))),suggestionNew=solveHomography(MAT_QUAD,shifted.map(p=>({x:p.x/320,y:p.y/400})));
+ const expectedSuggestion=project(coverTransform({w:320,h:400},{w:390,h:844}),project(suggestionNew,project(invert(suggestionOld),{x:.55,y:.5})));
+ const suggested=(await suggestion.getAttribute('data-placement-target')).split(' ')[0].split(',').map(Number);
+ assert.ok(Math.hypot(suggested[0]-expectedSuggestion.x,suggested[1]-expectedSuggestion.y)<5,'suggestion follows capture-time mat registration');
+ await page.evaluate(()=>window.__arFrame=3);await page.waitForTimeout(400);assert.equal(await suggestion.getAttribute('data-placement-visible'),'false');
+ await page.evaluate(()=>window.__arFrame=0);await tracking();
+ await page.getByRole('button',{name:'Hide suggestion',exact:true}).click();
+ await page.getByRole('button',{name:'Expand step card',exact:true}).click();
  await page.getByRole('button',{name:'Pin target',exact:true}).click();await overlay.click({position:{x:195,y:465}});
  await page.getByRole('button',{name:'Done positioning',exact:true}).click();
  const pin=(await overlay.getAttribute('data-ar-pin')).split(',').map(Number);assert.equal(pin.length,2);assert.ok(await hasColor(195,465,'cyan'));
@@ -69,5 +83,5 @@ try{
  await page.waitForFunction(h=>document.querySelector('h1')?.textContent!==h,heading);assert.equal(await overlay.getAttribute('data-ar-pin'),'','new active step clears target');
  await page.reload();await page.getByRole('heading',{level:1}).waitFor();assert.equal(await page.getByRole('button',{name:'AR overlay',exact:true}).getAttribute('aria-pressed'),'true');await tracking();
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=390),true);assert.deepEqual(errors,[]);
- console.log('AR browser passed at 390x844: real worker, print scale, pin projection, 3 markers, lost/reacquired tracking, delayed check anchoring, fallback, step sync, preference and reduced motion.');
+ console.log('AR browser passed at 390x844: real worker, print scale, AI suggestion anchoring, pin projection, 3 markers, lost/reacquired tracking, delayed check anchoring, fallback, step sync, preference and reduced motion.');
 }catch(e){console.error(errors);await page.screenshot({path:'/tmp/buildsight-ar-failure.png'});throw e;}finally{await browser.close();}

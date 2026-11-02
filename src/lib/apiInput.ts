@@ -21,6 +21,7 @@ export function validApiInput(route: string, v: unknown): v is Record<string, un
     case "pair-publish": return typeof v.code === "string" && isRoomCode(v.code) && parsePairMessage(v.message) !== null;
     case "extract": return isImage(v.page, 6_000_000);
     case "vision": return isImage(v.image) && optionalText(v.question, 4000);
+    case "ar-guide": return isImage(v.frame) && isImage(v.expected) && text(v.instruction, 4000) && text(v.part, 120) && !!(v.part as string).trim();
     case "locate": return isImage(v.image) && text(v.part, 120) && !!(v.part as string).trim() && parts(v.parts);
     case "tts": return typeof v.text === "string" && !!v.text.trim() && v.text.length <= 16_000;
     case "check": return isImage(v.frame) && isImage(v.expected) && optionalImage(v.previous) && optionalText(v.instruction, 4000) && strings(v.watchFor, 24, 500) && parts(v.parts);

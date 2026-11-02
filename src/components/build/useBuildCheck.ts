@@ -15,7 +15,7 @@ import { useCallback, useEffect, useRef } from "react";
 import type { ArGuide } from "./useArGuide";
 import type { BuildNavigation } from "./useBuildNavigation";
 import type { BuildState } from "./useBuildState";
-export function useBuildCheck(s: BuildState, n: BuildNavigation, ar: ArGuide) {
+export function useBuildCheck(s: BuildState, n: BuildNavigation, ar: ArGuide, cancelPlacement: () => void) {
   const {
     camera: cameraRef, phase, target, previous, setCheckState, setIssuePick, checkSeq: checkSeqRef,
     advance, setAdvance, voiceDone: voiceDoneRef, muted, check, setCheck, timingRef: timingRefRef,
@@ -41,6 +41,7 @@ export function useBuildCheck(s: BuildState, n: BuildNavigation, ar: ArGuide) {
       watchRef.current.misses = 0;
       watchRef.current.notYet = 0;
     }
+    cancelPlacement(); // Check wins: abort and discard any in-flight camera suggestion.
     const anchor = anchorFrame(frame);
     const seq = ++checkSeqRef.current;
     setAdvance(null);
@@ -86,7 +87,7 @@ export function useBuildCheck(s: BuildState, n: BuildNavigation, ar: ArGuide) {
       else setCheck({ state: "error", message: e instanceof Error && e.message ? e.message : "Check failed." });
       return null;
     }
-  }, [anchorFrame, step, target, check?.state, cameraRef, checkSeqRef, setAdvance, setCheck, setIssuePick, watchRef, previous, voiceDoneRef, timingRefRef, muted, setCheckState]);
+  }, [cancelPlacement, anchorFrame, step, target, check?.state, cameraRef, checkSeqRef, setAdvance, setCheck, setIssuePick, watchRef, previous, voiceDoneRef, timingRefRef, muted, setCheckState]);
 
   // The pending move to the next step. Auto Mode waits for the "verified" line to finish (the mic is off while it
   // speaks), then gives 3 s to cancel: the Cancel button, saying "stop"/"cancel"/"wait", Back or Escape. A manual check

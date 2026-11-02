@@ -1,4 +1,5 @@
 "use client";
+import { useCameraPlacement } from "./useCameraPlacement";
 import { useBuildPairing } from "./useBuildPairing";
 import { useArGuide } from "./useArGuide";
 import { useAutoController } from "./useAutoController";
@@ -16,11 +17,12 @@ export function useBuildModel() {
   const p = usePartGuidance(s);
   const pairing = useBuildPairing(s);
   const ar = useArGuide(s.camera, pairing.usePhone ? "phone" : "local");
-  const c = useBuildCheck(s, n, ar);
+  const placement = useCameraPlacement(s, ar, pairing.usePhone ? "phone" : "local");
+  const c = useBuildCheck(s, n, ar, placement.cancel);
   const r = useBuildRecognition(s, n);
   useAutoController(s, n, c, r);
   const summary = useBuildSummary(s);
   const v = useBuildVoice(s, n, c, r, summary.openSummary, ar.toggle);
-  return { ar, pairing, ...s, ...n, ...p, ...c, ...r, ...v, ...summary, roomForResult: s.isPhone && s.check != null && s.check.state !== "checking" };
+  return { ar, placement, pairing, ...s, ...n, ...p, ...c, ...r, ...v, ...summary, roomForResult: s.isPhone && s.check != null && s.check.state !== "checking" };
 }
 export type BuildModel = ReturnType<typeof useBuildModel>;

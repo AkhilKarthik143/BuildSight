@@ -26,3 +26,9 @@ Automated tests use synthetic marker images. These boxes are **not checked**: a 
 - [ ] PWA: install after visiting the demo, then go offline. Verify shell/manual assets already downloaded open. Paid checking and uncached assets must report unavailable honestly.
 
 Record device/browser versions, paper measurement, lighting, distances, detector FPS and failures here. No real-phone result is claimed by the automated run.
+
+## Camera suggestions (2026-11-02)
+- [ ] With a configured server key, compare suggestions against real manual placements at several steps, camera angles and lighting levels. Log errors and refusal/uncertainty rates; synthetic browser tests do not measure model accuracy.
+- [ ] Without a mat: Show placement should show an approximate landing area only for a clearly visible assembly. Test empty table, occlusion, lookalike parts and already-installed parts. Move the camera and confirm stale guidance hides; refresh to try again.
+- [ ] With a mat: move the camera while a request is pending and after the result arrives. The target should follow the capture-time mat registration; the loose-piece pickup box must disappear as the view changes.
+- [ ] Test several part sizes and phone rotations, dragging, rotation, keyboard nudges and overlapping controls. Amber is a suggestion, never an exact fit or a pass.

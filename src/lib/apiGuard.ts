@@ -5,6 +5,7 @@ import { validApiInput } from "./apiInput.ts";
 
 export const BODY_LIMITS: Record<ApiRoute, number> = {
   pair: 64 * 1024, "pair-events": 1024, "pair-publish": 8 * 1024 * 1024,
+  "ar-guide": 12 * 1024 * 1024,
   check: 12 * 1024 * 1024, "where-am-i": 12 * 1024 * 1024,
   extract: 8 * 1024 * 1024, locate: 8 * 1024 * 1024,
   assist: 8 * 1024 * 1024, vision: 8 * 1024 * 1024,

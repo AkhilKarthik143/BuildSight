@@ -120,6 +120,19 @@ Hackathon project. Third-party photos on the display-only hub categories are lis
 
 The post-event maintenance work is consolidated on `improve/full-project`. See [hardening validation](docs/hardening-validation.md) and [task checklist](BUILDSIGHT-TASKS.md). `main` and the upstream repository are unchanged.
 
+## Camera placement suggestions
+
+In a build, turn on **AR overlay**, choose the part, and tap **Show placement**. This compares a camera snapshot with the active manual step and draws an extra layer on the live video: a cyan pickup box when the loose part is visible, a connecting arrow, and an amber suggested landing area in the part's color. **Adjust suggestion** lets you drag, rotate 90°, or nudge it. The step card collapses to leave room for the camera; it remains expandable.
+
+No printed mat is required for a snapshot suggestion. Keep the camera still: a changed view hides it until you **Refresh placement**. With a tracked mat, the target follows the mat plane. The pickup box is snapshot-only and hides when the scene changes. Suggestions expire after one minute and clear on step/source changes, AR off or Check build. Placement controls never mark a step done.
+
+This is approximate visual guidance, **not exact stud registration or a verified fit**. Stud dots use the part metadata for recognition, not a physical scale measurement. The model must clearly see the assembly/attachment area before any target is drawn. Real-photo placement accuracy still needs human testing.
+
+Uses the existing server `ANTHROPIC_API_KEY` or `OPENROUTER_API_KEY`; no new dependencies or key entry in the browser. `/api/ar-guide` inherits input/body limits, rate limits and the optional daily Claude ceiling. One suggestion per tap, one pending suggestion at a time, no per-frame model calls. Check build cancels the browser's pending suggestion; a provider request already in progress can still incur usage.
+
+- `npm run test:camera-placement`: conservative response parsing, geometry, input validation and quota coverage.
+- `npm run test:camera-placement:browser`: mocked suggestions with a simulated camera at 390×844, dragging, rotation, motion invalidation, stale responses and check priority.
+
 ## Marker AR overlay
 
 1. Open `/ar/markers` and print the mat on A4 or US Letter at **100% / actual size**. Check its 50 mm scale bar with a ruler.
